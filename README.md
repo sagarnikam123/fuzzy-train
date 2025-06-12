@@ -76,13 +76,21 @@ Edit parameters in the `args` section.
 
 ### Build Locally
 ```
-docker build -t sagarnikam123/fake-log-generator:latest .
+docker build -t sagarnikam123/fuzzy-train:1.0.0 .
+docker tag sagarnikam123/fuzzy-train:1.0.0 sagarnikam123/fuzzy-train:latest
 ```
 
 ### Push to Docker Hub
 ```
 docker login
-docker push sagarnikam123/fake-log-generator:latest
+docker push sagarnikam123/fuzzy-train:1.0.0
+docker push sagarnikam123/fuzzy-train:latest
+```
+
+### Pull & use
+```
+docker pull sagarnikam123/fuzzy-train:1.0.0
+docker run --rm sagarnikam123/fuzzy-train
 ```
 
 ---
