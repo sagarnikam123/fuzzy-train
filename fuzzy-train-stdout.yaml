@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-stdout
+  labels:
+    app: fuzzy-train
+    output: stdout
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train
+      output: stdout
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train
+        output: stdout
+    spec:
+      containers:
+      - name: fuzzy-train
+        image: sagarnikam123/fuzzy-train:latest
+        args:
+          - "--min_log_length"
+          - "90"
+          - "--max_log_length"
+          - "150"
+          - "--lines_per_second"
+          - "1"
+          - "--time_zone"
+          - "UTC"
+          - "--log_format"
+          - "JSON"
+          - "--output"
+          - "stdout"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      restartPolicy: Always
