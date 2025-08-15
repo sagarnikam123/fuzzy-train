@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-file
+  labels:
+    app: fuzzy-train
+    output: file
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train
+      output: file
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train
+        output: file
+    spec:
+      containers:
+      - name: fuzzy-train
+        image: sagarnikam123/fuzzy-train:latest
+        args:
+          - "--min_log_length"
+          - "100"
+          - "--max_log_length"
+          - "200"
+          - "--lines_per_second"
+          - "2"
+          - "--time_zone"
+          - "UTC"
+          - "--log_format"
+          - "JSON"
+          - "--output"
+          - "file"
+          - "--file"
+          - "/logs/fuzzy-train.log"
+        volumeMounts:
+        - name: log-volume
+          mountPath: /logs
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+      volumes:
+      - name: log-volume
+        emptyDir: {}
+      restartPolicy: Always
