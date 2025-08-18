@@ -1,6 +1,7 @@
 # fuzzy-train
 
 [![Docker Hub](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train)](https://hub.docker.com/repository/docker/sagarnikam123/fuzzy-train)
+[![GitHub](https://img.shields.io/github/stars/sagarnikam123/fuzzy-train?style=social)](https://github.com/sagarnikam123/fuzzy-train)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A versatile fake log generator for testing and development - runs anywhere.
@@ -127,7 +128,8 @@ docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
 
 #### Run in background
 ```bash
-docker run --rm -d --name fuzzy-train-logs sagarnikam123/fuzzy-train:latest
+docker run -d --name fuzzy-train-log-generator sagarnikam123/fuzzy-train:latest \
+    --lines-per-second 2 --log-format JSON
 ```
 
 ### Kubernetes Deployment
