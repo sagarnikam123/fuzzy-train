@@ -19,22 +19,22 @@ spec:
     spec:
       containers:
       - name: fuzzy-train
-        image: sagarnikam123/fuzzy-train:latest
+        image: sagarnikam123/fuzzy-train:2.1.1
         args:
-          - "--min_log_length"
+          - "--min-log-length"
           - "100"
-          - "--max_log_length"
+          - "--max-log-length"
           - "200"
-          - "--lines_per_second"
+          - "--lines-per-second"
           - "2"
-          - "--time_zone"
+          - "--time-zone"
           - "UTC"
-          - "--log_format"
+          - "--log-format"
           - "JSON"
           - "--output"
           - "file"
           - "--file"
-          - "/logs/fuzzy-train.log"
+          - "/logs/"
         volumeMounts:
         - name: log-volume
           mountPath: /logs
