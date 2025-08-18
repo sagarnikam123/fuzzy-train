@@ -1,6 +1,6 @@
 # fuzzy-train
 
-[![Docker Hub](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train)](https://hub.docker.com/r/sagarnikam123/fuzzy-train)
+[![Docker Hub](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train)](https://hub.docker.com/repository/docker/sagarnikam123/fuzzy-train)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A versatile fake log generator for testing and development - runs anywhere.
