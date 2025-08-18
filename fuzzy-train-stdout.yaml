@@ -19,17 +19,17 @@ spec:
     spec:
       containers:
       - name: fuzzy-train
-        image: sagarnikam123/fuzzy-train:latest
+        image: sagarnikam123/fuzzy-train:2.1.1
         args:
-          - "--min_log_length"
+          - "--min-log-length"
           - "90"
-          - "--max_log_length"
+          - "--max-log-length"
           - "150"
-          - "--lines_per_second"
+          - "--lines-per-second"
           - "1"
-          - "--time_zone"
+          - "--time-zone"
           - "UTC"
-          - "--log_format"
+          - "--log-format"
           - "JSON"
           - "--output"
           - "stdout"
