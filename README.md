@@ -1,3 +1,5 @@
+![Fuzzy Train Banner](./assets/fuzzy-train-github-banner-1280-640.png)
+
 # fuzzy-train
 
 [![Docker Hub](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train)](https://hub.docker.com/repository/docker/sagarnikam123/fuzzy-train)
