@@ -7,6 +7,7 @@ import string
 import os
 import json
 import socket
+import sys
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 
@@ -39,6 +40,27 @@ SENTENCES = [
 __version__ = "2.1.1"
 DETAIL_PROBABILITY = 0.3
 TRACE_ID_COUNTER = 1
+
+# Banner constant
+BANNER = """┌─ FUZZY TRAIN ─────────────────────────────────────────────────────┐
+│                                                                   │
+│   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄   │
+│   █                                                           █   │
+│   █  LOG GENERATION & TESTING FRAMEWORK                       █   │
+│   █  Version {version} | Multi-format Support | Container Ready █   │
+│   █                                                           █   │
+│   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀   │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘"""
+
+def get_banner() -> str:
+    """Return formatted banner with version number.
+
+    Returns:
+        str: Formatted banner with version number
+    """
+    version_padded = f"{__version__:<7}"  # Pad to 7 chars for alignment
+    return BANNER.format(version=version_padded)
 
 # Default configuration constants
 DEFAULT_MIN_LOG_LENGTH = 90
@@ -277,8 +299,12 @@ def parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed arguments
     """
+    # Create custom description with banner
+    banner = get_banner()
+    description = f"fuzzy-train: A versatile fake log generator for testing and development - runs anywhere.\n\n{banner}"
+
     parser = argparse.ArgumentParser(
-        description="fuzzy-train: A versatile fake log generator for testing and development - runs anywhere.",
+        description=description,
         epilog="""Examples:
   python3 fuzzy-train.py                                            # Default JSON logs to stdout
   python3 fuzzy-train.py --log-format 'apache common' --output file # Apache logs to file
