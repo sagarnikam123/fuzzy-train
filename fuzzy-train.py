@@ -37,7 +37,7 @@ SENTENCES = [
 ]
 
 # Constants
-__version__ = "2.1.1"
+__version__ = "2.2.0"
 DETAIL_PROBABILITY = 0.3
 TRACE_ID_COUNTER = 1
 
