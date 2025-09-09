@@ -185,20 +185,20 @@ Use `--no-trace-id` to exclude trace_id field, or `--trace-id-type integer` for 
 
 ### Build locally
 ```bash
-docker build -t sagarnikam123/fuzzy-train:2.1.1 .
-docker tag sagarnikam123/fuzzy-train:2.1.1 sagarnikam123/fuzzy-train:latest
+docker build -t sagarnikam123/fuzzy-train:2.2.0 .
+docker tag sagarnikam123/fuzzy-train:2.2.0 sagarnikam123/fuzzy-train:latest
 ```
 
 ### Push to Docker Hub
 ```bash
 docker login
-docker push sagarnikam123/fuzzy-train:2.1.1
+docker push sagarnikam123/fuzzy-train:2.2.0
 docker push sagarnikam123/fuzzy-train:latest
 ```
 
 ### Test locally
 ```bash
-docker run --rm sagarnikam123/fuzzy-train:2.1.1
+docker run --rm sagarnikam123/fuzzy-train:2.2.0
 ```
 
 ## Contributing
