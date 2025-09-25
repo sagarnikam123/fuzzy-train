@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace        # removes trailing whitespace
+      - id: end-of-file-fixer          # ensures files end with newline
+      - id: fix-byte-order-marker      # fixes byte order marker
+      - id: mixed-line-ending          # ensures consistent line endings
+      - id: check-yaml                 # validates YAML syntax
+      - id: check-json                 # validates JSON syntax
+      - id: check-xml                  # validates XML syntax
+      - id: pretty-format-json         # formats JSON files
+      - id: check-merge-conflict       # prevents merge conflict markers
+      - id: detect-aws-credentials     # detects AWS credentials
+      - id: detect-private-key         # detects private keys
+      - id: check-added-large-files    # prevents large files from being added
