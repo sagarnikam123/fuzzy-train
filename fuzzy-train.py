@@ -83,20 +83,20 @@ def get_process_id() -> str:
         str: Process identifier string
     """
     # Check if running in any container
-    if (os.path.exists('/.dockerenv') or 
+    if (os.path.exists('/.dockerenv') or
         os.path.exists('/proc/1/cgroup') or
         os.environ.get('container') or
         os.path.exists('/run/.containerenv')):  # Podman
-        
+
         hostname = socket.gethostname()
-        
+
         # For Kubernetes pods, extract the hash suffix
         if '-' in hostname:
             parts = hostname.split('-')
             if len(parts) >= 2:
                 # Use last part (pod hash) + second-to-last if available
                 return f"{parts[-2]}-{parts[-1]}"[:12] if len(parts) > 2 else parts[-1][:12]
-        
+
         # Fallback to truncated hostname for Docker/Podman
         return hostname[:12]
     else:
