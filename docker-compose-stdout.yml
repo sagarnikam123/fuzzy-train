@@ -1,0 +1,43 @@
+# Docker Compose - Stdout Output
+# Generates logs to stdout for testing log collectors (Fluent-bit, Vector, Promtail, etc.)
+# Usage: docker-compose -f docker-compose-stdout.yml up
+# View logs: docker-compose -f docker-compose-stdout.yml logs -f [service-name]
+
+services:
+  auth-service:
+    # Volume generated: 2,000 lines/sec × ~200 bytes (150 chars + JSON overhead) = ~381 KB/sec (0.38 MB/sec)
+    image: sagarnikam123/fuzzy-train:latest
+    command: >
+      --lines-per-second 2000
+      --min-log-length 120
+      --max-log-length 180
+      --log-format JSON
+      --time-zone UTC
+      --output stdout
+      --trace-id-type integer
+    container_name: auth-logs-stdout
+
+  payment-service:
+    # Volume generated: 1,500 lines/sec × ~175 bytes (125 chars + logfmt overhead) = ~251 KB/sec (0.25 MB/sec)
+    image: sagarnikam123/fuzzy-train:latest
+    command: >
+      --lines-per-second 1500
+      --min-log-length 100
+      --max-log-length 150
+      --log-format logfmt
+      --time-zone UTC
+      --output stdout
+      --trace-id-type integer
+    container_name: payment-logs-stdout
+
+  user-service:
+    # Volume generated: 1,000 lines/sec × ~300 bytes (250 chars + Apache overhead) = ~286 KB/sec (0.29 MB/sec)
+    image: sagarnikam123/fuzzy-train:latest
+    command: >
+      --lines-per-second 1000
+      --min-log-length 200
+      --max-log-length 300
+      --log-format "apache combined"
+      --time-zone UTC
+      --output stdout
+    container_name: user-logs-stdout
