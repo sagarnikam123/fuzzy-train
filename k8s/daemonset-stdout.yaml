@@ -1,0 +1,33 @@
+# fuzzy-train-stdout-daemonset.yaml
+# Volume generated per node: 10 lines/sec × ~170 bytes (120 chars + JSON overhead) = ~1.6 KB/sec
+# Total cluster volume = 1.6 KB/sec × (Number of nodes)
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fuzzy-train-daemonset
+spec:
+  selector:
+    matchLabels:
+      app: fuzzy-train-daemonset
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-daemonset
+    spec:
+      containers:
+      - name: fuzzy-train
+        image: sagarnikam123/fuzzy-train:latest
+        args:
+          - "--lines-per-second"
+          - "10"                    # Adjust for desired rate per node
+          - "--min-log-length"
+          - "90"                    # Adjust for desired log size
+          - "--max-log-length"
+          - "150"                   # Adjust for desired log size
+          - "--time-zone"
+          - "UTC"
+          - "--log-format"
+          - "JSON"
+          - "--output"
+          - "stdout"
