@@ -24,6 +24,19 @@ fuzzy-train generates realistic fake logs in multiple formats, perfect for:
 - **Dashboard Development**: Create realistic data for visualization
 - **Training & Demos**: Provide realistic data for learning environments
 
+## Quick Start
+
+### Python (default)
+```bash
+python3 fuzzy-train.py
+```
+
+### Docker (default)
+```bash
+docker pull sagarnikam123/fuzzy-train:latest
+docker run --rm sagarnikam123/fuzzy-train:latest
+```
+
 ## Features
 
 - **Multiple Log Formats**: JSON, logfmt, Apache (common/combined/error), BSD syslog (RFC3164), Syslog (RFC5424)
@@ -34,6 +47,16 @@ fuzzy-train generates realistic fake logs in multiple formats, perfect for:
 - **Realistic Data**: Random log levels (INFO, WARN, DEBUG, ERROR) and varied content
 - **Output Options**: stdout, file, or both simultaneously
 - **Smart File Handling**: Accepts file paths or directory paths (auto-creates directories and default filename)
+
+## Important Notes
+
+### Container Behavior
+When running in containers (Docker, Podman, Kubernetes), the trace_id uses the container/pod identifier instead of PID for better tracking across multiple instances:
+- **Local execution**: Uses actual PID (e.g., `15432-00000001`)
+- **Docker/Podman**: Uses container hostname (e.g., `a1b2c3d4e5f6-00000001`)
+- **Kubernetes**: Uses truncated pod hash from pod name (12 chars, e.g., `abc123def456-00000001`)
+
+Use `--no-trace-id` to exclude trace_id field, or `--trace-id-type integer` for incremental integers instead of PID/Container ID.
 
 ## Usage
 
@@ -134,6 +157,37 @@ docker run -d --name fuzzy-train-log-generator sagarnikam123/fuzzy-train:latest 
     --lines-per-second 2 --log-format JSON
 ```
 
+### Docker Compose Usage
+
+#### File output (default)
+Generates logs to `./logs/` directory - useful for testing log file scrapers:
+```bash
+# Start services
+docker-compose up -d
+
+# View generated log files
+ls -lh logs/
+tail -f logs/auth-service.log
+
+# Stop services
+docker-compose down
+```
+
+#### Stdout output
+Generates logs to stdout - useful for testing log collectors (Fluent-bit, Vector, Promtail):
+```bash
+# Start services
+docker-compose -f docker-compose-stdout.yml up -d
+
+# View logs
+docker-compose -f docker-compose-stdout.yml logs -f auth-service
+
+# Stop services
+docker-compose -f docker-compose-stdout.yml down
+```
+
+> **Note**: Edit parameters in the `command` section of docker-compose files to customize log generation rates and formats.
+
 ### Kubernetes Deployment
 
 #### Deploy to Kubernetes
@@ -168,16 +222,6 @@ kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
 
 > **Note**: Edit parameters in the `args` section of the YAML files in `k8s/` directory to customize log generation.
 
-## Important Notes
-
-### Container Behavior
-When running in containers (Docker, Podman, Kubernetes), the trace_id uses the container/pod identifier instead of PID for better tracking across multiple instances:
-- **Local execution**: Uses actual PID (e.g., `15432-00000001`)
-- **Docker/Podman**: Uses container hostname (e.g., `a1b2c3d4e5f6-00000001`)
-- **Kubernetes**: Uses pod hash from pod name (e.g., `abc123def456-00000001`)
-
-Use `--no-trace-id` to exclude trace_id field, or `--trace-id-type integer` for incremental integers instead of PID/Container ID.
-
 ## Parameters
 
 ### Basic Options
@@ -187,7 +231,9 @@ Use `--no-trace-id` to exclude trace_id field, or `--trace-id-type integer` for 
 | `--log-format`       | JSON, logfmt, 'apache common', 'apache combined', <br>'apache error', 'bsd syslog', syslog | `JSON`      |
 | `--lines-per-second` | Log lines generated per second                 | `1`         |
 | `--output`           | Output destination: stdout or file             | `stdout`    |
-| `--file`             | File or directory path for log output <br>(auto-creates directories and default filename) | `fuzzy-train.log` |
+| `--file`             | File or directory path for log output <br>(auto-creates directories and default filename) | `fuzzy-train.log`* |
+
+`*` Default filename is used only when writing to file (e.g., `--output file` or a directory passed to `--file`); the plain default run writes to stdout.
 
 ### Log Content
 | Parameter            | Description                                    | Default     |
