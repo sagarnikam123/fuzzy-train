@@ -138,11 +138,35 @@ docker run -d --name fuzzy-train-log-generator sagarnikam123/fuzzy-train:latest 
 
 #### Deploy to Kubernetes
 ```bash
-kubectl apply -f fuzzy-train-file.yaml
-kubectl apply -f fuzzy-train-stdout.yaml
+# Deploy all manifests
+kubectl apply -f k8s/
+
+# Or deploy individually
+kubectl apply -f k8s/deployment-file.yaml      # Writes logs to file
+kubectl apply -f k8s/deployment-stdout.yaml    # Writes logs to stdout
+kubectl apply -f k8s/daemonset-stdout.yaml     # DaemonSet - one pod per node
 ```
 
-> **Note**: Edit parameters in the `args` section of the YAML files to customize log generation.
+#### Check deployment status
+```bash
+# View all fuzzy-train resources
+kubectl get deployments,daemonsets | grep fuzzy-train
+
+# Check pod status
+kubectl get pods -l app=fuzzy-train
+kubectl get pods -l app=fuzzy-train-daemonset
+
+# View logs from stdout deployment
+kubectl logs -l app=fuzzy-train,output=stdout --tail=20
+
+# View logs from daemonset
+kubectl logs -l app=fuzzy-train-daemonset --tail=10 --prefix=true
+
+# Check file logs (exec into container)
+kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
+```
+
+> **Note**: Edit parameters in the `args` section of the YAML files in `k8s/` directory to customize log generation.
 
 ## Important Notes
 
