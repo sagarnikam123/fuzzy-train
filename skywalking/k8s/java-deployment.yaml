@@ -1,0 +1,48 @@
+# Kubernetes Deployment for fuzzy-train-skywalking (Java)
+# Generates fake logs and sends them to SkyWalking via Java agent + logback gRPC appender
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-java
+  namespace: skywalking-test
+  labels:
+    app: fuzzy-train-java
+    app.kubernetes.io/name: fuzzy-train-java
+    app.kubernetes.io/part-of: fuzzy-train
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-java
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-java
+    spec:
+      containers:
+        - name: app
+          image: sagarnikam123/fuzzy-train-skywalking-java:latest
+          imagePullPolicy: Always
+          args:
+            - "--lines-per-second"
+            - "1"
+          env:
+            - name: SW_AGENT_NAME
+              value: "skywalking-test::fuzzy-train-java"
+            - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+              value: "skywalking-satellite.skywalking.svc:11800"
+            - name: SW_GRPC_LOG_SERVER_HOST
+              value: "skywalking-satellite.skywalking.svc"
+            - name: SW_GRPC_LOG_SERVER_PORT
+              value: "11800"
+            # Java 21 ByteBuddy fix
+            - name: JDK_JAVA_OPTIONS
+              value: "-Dorg.apache.skywalking.apm.dependencies.net.bytebuddy.experimental=true"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+      terminationGracePeriodSeconds: 10

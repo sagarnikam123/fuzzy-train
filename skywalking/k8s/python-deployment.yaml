@@ -1,0 +1,43 @@
+# Kubernetes Deployment for fuzzy-train-skywalking (Python)
+# Generates fake logs and sends them to SkyWalking via Python agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-python
+  namespace: skywalking-test
+  labels:
+    app: fuzzy-train-python
+    app.kubernetes.io/name: fuzzy-train-python
+    app.kubernetes.io/part-of: fuzzy-train
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-python
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-python
+    spec:
+      containers:
+        - name: app
+          image: sagarnikam123/fuzzy-train-skywalking-python:latest
+          imagePullPolicy: Always
+          args:
+            - "--lines-per-second"
+            - "1"
+          env:
+            - name: SW_AGENT_NAME
+              value: "skywalking-test::fuzzy-train-python"
+            - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+              value: "skywalking-satellite.skywalking.svc:11800"
+            - name: SW_AGENT_LOG_REPORTER_ACTIVE
+              value: "true"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+      terminationGracePeriodSeconds: 10
