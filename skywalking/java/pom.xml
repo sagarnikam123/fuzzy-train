@@ -22,6 +22,18 @@
     </properties>
 
     <dependencies>
+        <!-- SkyWalking Logback Toolkit for gRPC log reporter
+             Per AGENT_INTEGRATION_GUIDE.md Log Collection Setup (Java)
+             NOTE: Do NOT use 'provided' scope — logback needs to load GRPCLogClientAppender
+             from the app classloader. The double-agent ClassFormatError was caused by
+             bundling a second agent in the Dockerfile (now removed). With single SWCK-injected
+             agent, toolkit in shaded JAR works correctly. -->
+        <dependency>
+            <groupId>org.apache.skywalking</groupId>
+            <artifactId>apm-toolkit-logback-1.x</artifactId>
+            <version>${skywalking.version}</version>
+        </dependency>
+
         <!-- Logback Classic -->
         <dependency>
             <groupId>ch.qos.logback</groupId>

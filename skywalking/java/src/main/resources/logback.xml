@@ -1,18 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-    <!-- Console appender only.
-         The SkyWalking Java agent (injected by SWCK) intercepts log calls at JVM
-         level via its apm-toolkit-logback-1.x-activation and forwards them to
-         Satellite/OAP via gRPC automatically.
-         No GRPCLogClientAppender needed — adding it causes ClassFormatError because
-         the agent instruments the same class from the app JAR (duplicate field). -->
+    <!-- Console appender with trace ID (per AGENT_INTEGRATION_GUIDE.md) -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%level] %logger{36} - %msg%n</pattern>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.mdc.TraceIdMDCPatternLogbackLayout">
+                <Pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{tid}] [%thread] %-5level %logger{36} - %msg%n</Pattern>
+            </layout>
         </encoder>
+    </appender>
+
+    <!-- gRPC log reporter — sends logs to Satellite → OAP
+         Ref: AGENT_INTEGRATION_GUIDE.md Log Collection Setup (Java) -->
+    <appender name="grpc-log" class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.log.GRPCLogClientAppender">
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.mdc.TraceIdMDCPatternLogbackLayout">
+                <Pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{tid}] [%thread] %-5level %logger{36} - %msg%n</Pattern>
+            </layout>
+        </encoder>
+    </appender>
+
+    <!-- Async wrapper for non-blocking gRPC logging -->
+    <appender name="async-grpc-log" class="ch.qos.logback.classic.AsyncAppender">
+        <discardingThreshold>0</discardingThreshold>
+        <queueSize>1024</queueSize>
+        <neverBlock>true</neverBlock>
+        <appender-ref ref="grpc-log"/>
     </appender>
 
     <root level="DEBUG">
         <appender-ref ref="STDOUT"/>
+        <appender-ref ref="async-grpc-log"/>
     </root>
 </configuration>
