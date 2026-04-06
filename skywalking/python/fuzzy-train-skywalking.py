@@ -45,6 +45,10 @@ if SW_AGENT_ENABLED:
             agent_logging_level='WARNING',  # Agent's own logging (not app logs)
         )
         agent.start()
+        # IMPORTANT: Set root logger level to DEBUG so all logs pass the agent's
+        # threshold check. Agent 1.0.0+ auto-installs log reporter via monkey-patch
+        # on Logger.handle — no manual sw_logging.install() needed.
+        logging.getLogger().setLevel(logging.DEBUG)
         print(f"[INFO] SkyWalking agent started: {SW_SERVICE_NAME} -> {SW_BACKEND}", file=sys.stderr)
     except ImportError as e:
         print(f"[WARN] SkyWalking agent not available: {e}. Running without agent.", file=sys.stderr)
@@ -68,6 +72,9 @@ console_formatter = logging.Formatter(
 )
 console_handler.setFormatter(console_formatter)
 logger.addHandler(console_handler)
+
+# Agent 1.0.0+ auto-installs log reporter via monkey-patch on Logger.handle.
+# No manual sw_logging.install() needed.
 
 # Constants (matching fuzzy-train.py)
 __version__ = "1.0.0"
