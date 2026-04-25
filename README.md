@@ -255,15 +255,10 @@ kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
 
 ### Build locally
 ```bash
-docker build -t sagarnikam123/fuzzy-train:2.2.0 .
-docker tag sagarnikam123/fuzzy-train:2.2.0 sagarnikam123/fuzzy-train:latest
-```
-
-### Push to Docker Hub
-```bash
-docker login
-docker push sagarnikam123/fuzzy-train:2.2.0
-docker push sagarnikam123/fuzzy-train:latest
+# Multi-platform build for EKS (amd64) + local dev (arm64/Apple Silicon)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t sagarnikam123/fuzzy-train:2.2.0 \
+  -t sagarnikam123/fuzzy-train:latest --push .
 ```
 
 ### Test locally

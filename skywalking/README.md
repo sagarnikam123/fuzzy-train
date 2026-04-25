@@ -91,20 +91,20 @@ kubectl logs -n skywalking-test -l app=fuzzy-train-java --tail=20
 
 ```bash
 cd python
-docker build -t sagarnikam123/fuzzy-train-skywalking-python:1.0.0 .
-docker tag sagarnikam123/fuzzy-train-skywalking-python:1.0.0 sagarnikam123/fuzzy-train-skywalking-python:latest
-docker push sagarnikam123/fuzzy-train-skywalking-python:1.0.0
-docker push sagarnikam123/fuzzy-train-skywalking-python:latest
+# Multi-platform build for EKS (amd64) + local dev (arm64/Apple Silicon)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t sagarnikam123/fuzzy-train-skywalking-python:1.0.0 \
+  -t sagarnikam123/fuzzy-train-skywalking-python:latest --push .
 ```
 
 ### Java
 
 ```bash
 cd java
-docker build -t sagarnikam123/fuzzy-train-skywalking-java:1.0.0 .
-docker tag sagarnikam123/fuzzy-train-skywalking-java:1.0.0 sagarnikam123/fuzzy-train-skywalking-java:latest
-docker push sagarnikam123/fuzzy-train-skywalking-java:1.0.0
-docker push sagarnikam123/fuzzy-train-skywalking-java:latest
+# Multi-platform build for EKS (amd64) + local dev (arm64/Apple Silicon)
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t sagarnikam123/fuzzy-train-skywalking-java:1.0.0 \
+  -t sagarnikam123/fuzzy-train-skywalking-java:latest --push .
 ```
 
 ## Configuration
