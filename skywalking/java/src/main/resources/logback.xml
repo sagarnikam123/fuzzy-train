@@ -28,16 +28,8 @@
         <appender-ref ref="STDOUT"/>
     </appender>
 
-    <!-- Async wrapper for non-blocking gRPC logging -->
-    <appender name="async-grpc-log" class="ch.qos.logback.classic.AsyncAppender">
-        <discardingThreshold>0</discardingThreshold>
-        <queueSize>1024</queueSize>
-        <neverBlock>true</neverBlock>
-        <appender-ref ref="grpc-log"/>
-    </appender>
-
     <root level="DEBUG">
         <appender-ref ref="async-stdout"/>
-        <appender-ref ref="async-grpc-log"/>
+        <appender-ref ref="grpc-log"/>
     </root>
 </configuration>
