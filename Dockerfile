@@ -8,7 +8,12 @@ ENV PYTHONUNBUFFERED=1 \
 # Set working directory
 WORKDIR /app
 
-# Copy only the script (no requirements.txt needed if no dependencies)
+# Install faker so shipped images always produce enriched logs.
+# (The script still runs standalone without it, via graceful fallback.)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the log generator script
 COPY fuzzy-train.py .
 
 # Set entrypoint for easy override
