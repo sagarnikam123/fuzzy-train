@@ -8,8 +8,24 @@ import os
 import json
 import socket
 import sys
-from datetime import datetime, timezone
+import gzip
+import re
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, List
+
+# Optional faker enrichment: when installed, logs use broad realistic data;
+# when absent, the script falls back to the built-in zero-dependency generator
+# so the instant fast path keeps working byte-compatibly.
+# ponytail: one shared module-scope Faker() instance — faker calls are the
+# hot-path cost at high line rates (e.g. 2000 lines/sec), so we never create
+# per-line instances. Not seeded, to preserve current run-to-run randomness.
+try:
+    from faker import Faker
+    fake = Faker()
+    FAKER_AVAILABLE = True
+except ImportError:
+    fake = None
+    FAKER_AVAILABLE = False
 
 # Log levels and example sentences
 LOG_LEVELS = ["INFO", "ERROR", "DEBUG", "WARN"]
@@ -37,7 +53,7 @@ SENTENCES = [
 ]
 
 # Constants
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 DETAIL_PROBABILITY = 0.3
 TRACE_ID_COUNTER = 1
 
@@ -75,6 +91,15 @@ DEFAULT_TIME_ZONE = "local"
 DEFAULT_LOG_FORMAT = "JSON"
 DEFAULT_OUTPUT = "stdout"
 DEFAULT_FILE = "fuzzy-train.log"
+
+# Output-control defaults (flog-inspired). 0/None = feature off, preserving
+# the infinite real-time streaming default.
+DEFAULT_COUNT = 0        # 0 = infinite streaming (today's default)
+DEFAULT_MAX_BYTES = 0    # 0 = no byte cap
+DEFAULT_SPLIT_BY = 0     # 0 = no file splitting
+DEFAULT_OVERWRITE = False
+DEFAULT_COMPRESS = False
+DEFAULT_TIME_STEP = None  # None = real wall-clock timestamps
 
 def get_process_id() -> str:
     """Get process identifier based on environment (PID for local, container ID for containers).
@@ -115,23 +140,35 @@ def generate_random_message(length: int) -> str:
     """
     message = ""
     while len(message) < length:
-        sentence = random.choice(SENTENCES)
-        if random.random() < DETAIL_PROBABILITY:
-            detail = ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(10, 30)))
-            sentence += f" Details: {detail}"
+        if FAKER_AVAILABLE:
+            # Broad, contextual variety from many faker providers.
+            sentence = random.choice([
+                fake.sentence,
+                lambda: f"user {fake.user_name()} from {fake.ipv4()} accessed {fake.uri_path()}",
+                lambda: f"{fake.company()} processed request for {fake.email()}",
+                lambda: f"{fake.http_method()} {fake.url()} completed",
+                lambda: f"host {fake.hostname()} reported {fake.word()} event",
+            ])()
+        else:
+            sentence = random.choice(SENTENCES)
+            if random.random() < DETAIL_PROBABILITY:
+                detail = ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(10, 30)))
+                sentence += f" Details: {detail}"
         message += sentence + " "
     return message[:length]
 
-def generate_timestamp(time_zone: str) -> str:
+def generate_timestamp(time_zone: str, base: Optional[datetime] = None) -> str:
     """Generate ISO 8601 timestamp in specified timezone.
 
     Args:
         time_zone: 'local', 'UTC', 'utc', or 'LOCAL'
+        base: Optional synthetic UTC datetime to use instead of the wall clock
+              (used by --time-step to generate time-spread logs instantly)
 
     Returns:
         str: ISO 8601 formatted timestamp
     """
-    now = datetime.now(timezone.utc)
+    now = base if base is not None else datetime.now(timezone.utc)
     if time_zone.lower() == "local":
         now = now.astimezone()
     # ISO 8601 with microseconds and Z for UTC
@@ -174,30 +211,30 @@ def format_logfmt_log(entry: Dict[str, Any]) -> str:
 
 def format_apache_common_log(entry: Dict[str, Any]) -> str:
     """Format log entry as Apache Common Log Format."""
-    host = "127.0.0.1"
+    host = fake.ipv4() if FAKER_AVAILABLE else "127.0.0.1"
     ident = "-"
     user = "-"
     timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
     dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
     tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
-    request = "GET /index.html HTTP/1.1"
+    request = f"{fake.http_method()} /{fake.uri_path()} HTTP/1.1" if FAKER_AVAILABLE else "GET /index.html HTTP/1.1"
     status = random.choice([200, 404, 500, 302])
     size = len(entry['message'])
     return f'{host} {ident} {user} {tstr} "{request}" {status} {size}'
 
 def format_apache_combined_log(entry: Dict[str, Any]) -> str:
     """Format log entry as Apache Combined Log Format."""
-    host = "127.0.0.1"
+    host = fake.ipv4() if FAKER_AVAILABLE else "127.0.0.1"
     ident = "-"
     user = "-"
     timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
     dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
     tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
-    request = "GET /index.html HTTP/1.1"
+    request = f"{fake.http_method()} /{fake.uri_path()} HTTP/1.1" if FAKER_AVAILABLE else "GET /index.html HTTP/1.1"
     status = random.choice([200, 404, 500, 302])
     size = len(entry['message'])
-    referer = "https://example.com/"
-    ua = "Mozilla/5.0 (compatible; FakeBot/1.0)"
+    referer = fake.url() if FAKER_AVAILABLE else "https://example.com/"
+    ua = fake.user_agent() if FAKER_AVAILABLE else "Mozilla/5.0 (compatible; FakeBot/1.0)"
     return f'{host} {ident} {user} {tstr} "{request}" {status} {size} "{referer}" "{ua}"'
 
 def format_apache_error_log(entry: Dict[str, Any]) -> str:
@@ -206,7 +243,8 @@ def format_apache_error_log(entry: Dict[str, Any]) -> str:
     dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
     tstr = dt.strftime("%a %b %d %H:%M:%S.%f %Y")
     pid = random.randint(1000, 99999)
-    client = f"127.0.0.1:{random.randint(1000, 65535)}"
+    client_ip = fake.ipv4() if FAKER_AVAILABLE else "127.0.0.1"
+    client = f"{client_ip}:{random.randint(1000, 65535)}"
     level = entry.get('level', 'info').lower()
     return f'[{tstr}] [core:{level}] [pid {pid}] [client {client}] {entry["message"]}'
 
@@ -215,7 +253,8 @@ def format_bsd_syslog_log(entry: Dict[str, Any]) -> str:
     timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
     dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
     tstr = dt.strftime("%b %d %H:%M:%S")
-    host = "localhost"
+    # ponytail: enrich host only; PRI/tag/structure stay fixed (RFC3164 shape).
+    host = fake.hostname() if FAKER_AVAILABLE else "localhost"
     tag = "fuzzy-train"
     pri = "<13>"  # user.notice
     return f'{pri}{tstr} {host} {tag}: {entry["message"]}'
@@ -225,7 +264,8 @@ def format_rfc5424_syslog_log(entry: Dict[str, Any]) -> str:
     timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
     dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
     tstr = dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    host = "localhost"
+    # ponytail: enrich host only; PRI/app/proc_id/msg_id structure stays fixed (RFC5424 shape).
+    host = fake.hostname() if FAKER_AVAILABLE else "localhost"
     app = "fuzzy-train"
     proc_id = str(os.getpid())
     msg_id = "ID1"
@@ -282,16 +322,94 @@ def resolve_file_path(path: str) -> str:
         # If it's just a filename, use current directory
         return path
 
-def write_log(line: str, file_path: str) -> None:
-    """Write log line to file.
+class OutputHandler:
+    """Manages file output: plain/gzip, append/overwrite, and split rotation.
+
+    ponytail: replaces the old per-line open(path, "a") reopen with a single
+    persistent handle — needed for gzip streaming and split rotation, and much
+    faster at high line rates. Split uses a simple line/byte counter (ceiling:
+    no time-based rotation; upgrade path = add a timer trigger in write()).
+    """
+
+    def __init__(self, file_path: str, overwrite: bool = False, compress: bool = False,
+                 split_by: int = 0, split_unit: str = "lines") -> None:
+        self.base_path = resolve_file_path(file_path)
+        self.mode_char = "w" if overwrite else "a"
+        # .gz extension implies compression too (flog-style convenience).
+        self.compress = compress or self.base_path.endswith(".gz")
+        self.split_by = split_by  # 0 = no splitting
+        self.split_unit = split_unit  # "lines" or "bytes"
+        self.part = 0
+        self.lines_in_part = 0
+        self.bytes_in_part = 0
+        self.fh = None
+        self._open()
+
+    def _current_path(self) -> str:
+        """Path for the current split part (part 0 uses the base name)."""
+        if self.split_by <= 0 or self.part == 0:
+            return self.base_path
+        # Insert part index before the extension: name.log -> name1.log
+        root, ext = os.path.splitext(self.base_path)
+        # Keep .gz paired with its real extension (e.g. name.log.gz)
+        if ext == ".gz":
+            root, inner = os.path.splitext(root)
+            return f"{root}{self.part}{inner}{ext}"
+        return f"{root}{self.part}{ext}"
+
+    def _open(self) -> None:
+        path = self._current_path()
+        if self.compress:
+            self.fh = gzip.open(path, self.mode_char + "t", encoding="utf-8")
+        else:
+            self.fh = open(path, self.mode_char, encoding="utf-8")
+        self.lines_in_part = 0
+        self.bytes_in_part = 0
+
+    def _should_rotate(self) -> bool:
+        if self.split_by <= 0:
+            return False
+        if self.split_unit == "bytes":
+            return self.bytes_in_part >= self.split_by
+        return self.lines_in_part >= self.split_by
+
+    def write(self, line: str) -> None:
+        if self._should_rotate():
+            self.close()
+            self.part += 1
+            self._open()
+        self.fh.write(line + "\n")
+        self.lines_in_part += 1
+        self.bytes_in_part += len(line.encode("utf-8")) + 1
+
+    def close(self) -> None:
+        if self.fh:
+            self.fh.close()
+            self.fh = None
+
+def parse_duration(value: str) -> float:
+    """Parse a duration string into seconds (flog-style).
+
+    Accepts a plain number (seconds) or a suffixed value: ms, s, m, h.
+    ponytail: supported units are ms/s/m/h; a bare number means seconds.
 
     Args:
-        line: Log line to write
-        file_path: Target file path
+        value: Duration string, e.g. '10', '20ms', '5s', '1m'
+
+    Returns:
+        float: Duration in seconds
+
+    Raises:
+        SystemExit: If the value cannot be parsed
     """
-    resolved_path = resolve_file_path(file_path)
-    with open(resolved_path, "a", encoding="utf-8") as f:
-        f.write(line + "\n")
+    m = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*(ms|s|m|h)?\s*", value)
+    if not m:
+        print(f"Error: invalid --time-step duration '{value}' (use e.g. 10, 20ms, 5s, 1m)")
+        raise SystemExit(1)
+    num = float(m.group(1))
+    unit = m.group(2) or "s"
+    factor = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}[unit]
+    return num * factor
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments.
@@ -312,6 +430,11 @@ def parse_args() -> argparse.Namespace:
   python3 fuzzy-train.py --min-log-length 200 --max-log-length 300  # Custom message lengths
   python3 fuzzy-train.py --no-timestamp --no-trace-id               # Minimal logs (message only)
   python3 fuzzy-train.py --log-format syslog --trace-id-type integer  # Syslog with simple trace IDs
+  python3 fuzzy-train.py --count 1000 --output file                  # Bounded: 1000 lines then exit
+  python3 fuzzy-train.py --max-bytes 1048576 --output file           # Bounded: ~1MB then exit
+  python3 fuzzy-train.py --file logs.gz --count 500                  # Gzip-compressed output
+  python3 fuzzy-train.py --file app.log --count 1000 --split-by 200  # Split into 200-line files
+  python3 fuzzy-train.py --count 100 --time-step 1m                  # 100 logs, timestamps 1min apart
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -352,6 +475,21 @@ def parse_args() -> argparse.Namespace:
                         help="Exclude log level field")
     fields.add_argument("--no-length", action="store_true",
                         help="Exclude message length field")
+
+    # Output Control (flog-inspired; all opt-in, streaming stays the default)
+    outctl = parser.add_argument_group('Output Control')
+    outctl.add_argument("--count", type=int, default=DEFAULT_COUNT, metavar="N",
+                        help="Generate exactly N lines then exit (default: 0 = infinite streaming)")
+    outctl.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
+                        help="Generate until >= N bytes then exit (ignored when --count is set)")
+    outctl.add_argument("--overwrite", action="store_true",
+                        help="Truncate the output file before writing instead of appending")
+    outctl.add_argument("--compress", action="store_true",
+                        help="Gzip file output (also auto-enabled when --file ends with .gz)")
+    outctl.add_argument("--split-by", type=int, default=DEFAULT_SPLIT_BY, metavar="N",
+                        help="Rotate output file every N lines (or N bytes when --max-bytes is used)")
+    outctl.add_argument("--time-step", type=str, default=DEFAULT_TIME_STEP, metavar="DURATION",
+                        help="Advance each log's timestamp by DURATION without real waiting (e.g. 10, 20ms, 5s, 1m)")
     return parser.parse_args()
 
 def get_arg_value(args: argparse.Namespace, name: str) -> Any:
@@ -410,6 +548,10 @@ def build_log_entry(timestamp: str, log_level: str, message: str, trace_id: Opti
     Returns:
         Dict[str, Any]: Log entry dictionary
     """
+    # ponytail: JSON/logfmt schema deliberately unchanged — faker variety flows
+    # through the `message` body (see generate_random_message) so key names and
+    # order stay stable for existing parsers/dashboards. Ceiling: dedicated
+    # structured faker fields would need new --fields flags + doc updates.
     log_entry = {}
 
     if include_timestamp:
@@ -444,19 +586,64 @@ def main() -> None:
     output = args.output.lower()
     file_path = args.file
 
+    # Output-control parameters
+    count = get_arg_value(args, 'count') or 0
+    max_bytes = get_arg_value(args, 'max-bytes') or 0
+    overwrite = bool(get_arg_value(args, 'overwrite') or False)
+    compress = bool(get_arg_value(args, 'compress') or False)
+    split_by = get_arg_value(args, 'split-by') or 0
+    time_step_raw = get_arg_value(args, 'time-step')
+
+    # Validate non-negative integers
+    for name, val in (("count", count), ("max-bytes", max_bytes), ("split-by", split_by)):
+        if val < 0:
+            print(f"Error: --{name} cannot be negative")
+            raise SystemExit(1)
+
+    # --count takes precedence over --max-bytes (flog parity)
+    if count > 0:
+        max_bytes = 0
+
+    # Parse fake-time step (seconds); None = real wall-clock
+    time_step = parse_duration(time_step_raw) if time_step_raw is not None else None
+
+    # split-by unit follows the active bound: bytes when byte-bounded, else lines
+    split_unit = "bytes" if (max_bytes > 0 and count == 0) else "lines"
+
+    # gzip/overwrite/split are file-only; auto-enable file output if requested
+    file_features = compress or overwrite or split_by > 0
+    if file_features and output != "file" and not file_path:
+        output = "file"
+
     # Output logic
     to_stdout = (output == "stdout") or (output == "" and not file_path)
     to_file = (output == "file") or (file_path is not None)
     if to_file and not file_path:
         file_path = DEFAULT_FILE
 
+    handler = None
+    if to_file:
+        handler = OutputHandler(file_path, overwrite=overwrite, compress=compress,
+                                split_by=split_by, split_unit=split_unit)
+
+    # Synthetic clock base for --time-step
+    synthetic_time = datetime.now(timezone.utc) if time_step is not None else None
+
+    lines_written = 0
+    bytes_written = 0
     try:
         while True:
+            # Stop conditions (bounded batch mode); count beats bytes
+            if count > 0 and lines_written >= count:
+                break
+            if max_bytes > 0 and bytes_written >= max_bytes:
+                break
+
             log_level = random.choice(LOG_LEVELS)
             trace_id = generate_trace_id(include_trace_id, trace_id_type)
             message_length = random.randint(min_len, max_len)
             message = generate_random_message(message_length)
-            timestamp = generate_timestamp(tz)
+            timestamp = generate_timestamp(tz, base=synthetic_time)
 
             # Build log entry with optimal field ordering for UX
             log_entry = build_log_entry(
@@ -466,11 +653,20 @@ def main() -> None:
             line = format_log(log_entry, log_format)
             if to_stdout:
                 print(line)
-            if to_file:
-                write_log(line, file_path)
+            if handler:
+                handler.write(line)
+
+            lines_written += 1
+            bytes_written += len(line.encode("utf-8")) + 1
+            if synthetic_time is not None:
+                synthetic_time += timedelta(seconds=time_step)
+
             time.sleep(1.0 / lps)
     except KeyboardInterrupt:
         print("\nLog generation stopped.")
+    finally:
+        if handler:
+            handler.close()
 
 if __name__ == "__main__":
     main()

@@ -28,8 +28,13 @@ fuzzy-train generates realistic fake logs in multiple formats, perfect for:
 
 ### Python (default)
 ```bash
+# Optional: install faker for broad, realistic log data (enabled automatically when present)
+pip install -r requirements.txt
+
 python3 fuzzy-train.py
 ```
+
+> **Realistic data:** When the [`faker`](https://pypi.org/project/Faker/) package is installed, logs are automatically enriched with realistic contextual data (IPs, HTTP methods/paths, user-agents, hostnames, usernames, companies, etc.) across all formats. Docker/Kubernetes images ship with faker included, so they are always enriched. If faker is not installed, fuzzy-train gracefully falls back to its built-in generator — the instant, zero-dependency fast path is unchanged. No CLI flags changed.
 
 ### Docker (default)
 ```bash
@@ -44,9 +49,13 @@ docker run --rm sagarnikam123/fuzzy-train:latest
 - **Timezone Support**: Local timezone or UTC timestamps
 - **Flexible Deployment**: Python script, Docker container, or Kubernetes (Deployment/DaemonSet)
 - **Process Tracking**: trace_id with either PID/Container ID or incremental integer for multi-instance tracking
-- **Realistic Data**: Random log levels (INFO, WARN, DEBUG, ERROR) and varied content
+- **Realistic Data**: Random log levels (INFO, WARN, DEBUG, ERROR) and varied content; optional [faker](https://pypi.org/project/Faker/)-powered enrichment (IPs, HTTP methods/paths, user-agents, hostnames, usernames, companies) auto-enabled when installed, with zero-dependency fallback
 - **Output Options**: stdout, file, or both simultaneously
 - **Smart File Handling**: Accepts file paths or directory paths (auto-creates directories and default filename)
+- **Bounded Generation**: Generate an exact number of lines (`--count`) or up to a byte size (`--max-bytes`) then exit — ideal for reproducible fixtures
+- **Gzip Output**: Write compressed logs directly (`--compress` or a `.gz` filename)
+- **File Splitting**: Rotate output into multiple files by line count or bytes (`--split-by`) for log-rotation testing
+- **Fake Time Stepping**: Spread timestamps across a synthetic time range instantly (`--time-step`) without real waiting
 
 ## Important Notes
 
@@ -251,20 +260,39 @@ kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
 | `--no-log-level`     | Exclude log level field                        | `false`     |
 | `--no-length`        | Exclude message length field                   | `false`     |
 
+### Output Control
+All opt-in — the default remains infinite real-time streaming.
+
+| Parameter            | Description                                    | Default     |
+|----------------------|------------------------------------------------|-------------|
+| `--count`            | Generate exactly N lines then exit             | `0` (infinite) |
+| `--max-bytes`        | Generate until ≥ N bytes then exit <br>(ignored when `--count` is set) | `0` (no cap) |
+| `--overwrite`        | Truncate the output file before writing <br>instead of appending | `false`     |
+| `--compress`         | Gzip file output (auto-enabled when <br>`--file` ends with `.gz`) | `false`     |
+| `--split-by`         | Rotate output file every N lines <br>(or N bytes when `--max-bytes` is used) | `0` (no split) |
+| `--time-step`        | Advance each log's timestamp by DURATION <br>without real waiting (e.g. `10`, `20ms`, `5s`, `1m`) | `-` (real time) |
+
+#### Bounded output examples
+```bash
+# Generate exactly 1000 lines to a file, then exit
+python3 fuzzy-train.py --count 1000 --output file
+
+# Generate ~1MB of logs then exit
+python3 fuzzy-train.py --max-bytes 1048576 --output file
+
+# Gzip-compressed output (500 lines)
+python3 fuzzy-train.py --file logs.gz --count 500
+
+# Split a 1000-line run into 200-line files (app.log, app1.log, ...)
+python3 fuzzy-train.py --file app.log --count 1000 --split-by 200
+
+# 100 logs with timestamps spaced 1 minute apart, generated instantly
+python3 fuzzy-train.py --count 100 --time-step 1m --time-zone UTC
+```
+
 ## Development
 
-### Build locally
-```bash
-# Multi-platform build for EKS (amd64) + local dev (arm64/Apple Silicon)
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t sagarnikam123/fuzzy-train:2.2.0 \
-  -t sagarnikam123/fuzzy-train:latest --push .
-```
-
-### Test locally
-```bash
-docker run --rm sagarnikam123/fuzzy-train:2.2.0
-```
+For building the image (single- and multi-platform), pushing, and testing the container, see [docs/BUILD.md](docs/BUILD.md).
 
 ## Contributing
 
