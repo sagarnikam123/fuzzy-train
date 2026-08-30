@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""fuzzy-train: a versatile fake log generator for testing and development.
+
+Streams or batch-generates fake logs in multiple formats (JSON, logfmt, Apache
+common/combined/error, BSD RFC3164 and RFC5424 syslog). Log content and format
+fields are enriched with realistic data via the optional `faker` package when
+installed, and fall back to a built-in zero-dependency generator otherwise.
+
+Output control (all opt-in; infinite real-time streaming is the default):
+bounded generation by line count or byte size, file overwrite, gzip output,
+file splitting/rotation, and fake-time timestamp stepping.
+"""
 
 import argparse
 import random
@@ -10,8 +21,9 @@ import socket
 import sys
 import gzip
 import re
+import itertools
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 # Optional faker enrichment: when installed, logs use broad realistic data;
 # when absent, the script falls back to the built-in zero-dependency generator
@@ -55,7 +67,8 @@ SENTENCES = [
 # Constants
 __version__ = "2.3.0"
 DETAIL_PROBABILITY = 0.3
-TRACE_ID_COUNTER = 1
+# Trace ID sequence (itertools.count avoids a mutable module global + `global` stmt)
+TRACE_ID_SEQ = itertools.count(1)
 
 # Banner constant
 BANNER = """┌─ FUZZY TRAIN ─────────────────────────────────────────────────────┐
@@ -82,11 +95,7 @@ def get_banner() -> str:
 DEFAULT_MIN_LOG_LENGTH = 90
 DEFAULT_MAX_LOG_LENGTH = 100
 DEFAULT_LINES_PER_SECOND = 1
-DEFAULT_TRACE_ID = "true"
 DEFAULT_TRACE_ID_TYPE = "pid"
-DEFAULT_TIMESTAMP = "true"
-DEFAULT_LOG_LEVEL = "true"
-DEFAULT_LENGTH = "true"
 DEFAULT_TIME_ZONE = "local"
 DEFAULT_LOG_FORMAT = "JSON"
 DEFAULT_OUTPUT = "stdout"
@@ -97,8 +106,6 @@ DEFAULT_FILE = "fuzzy-train.log"
 DEFAULT_COUNT = 0        # 0 = infinite streaming (today's default)
 DEFAULT_MAX_BYTES = 0    # 0 = no byte cap
 DEFAULT_SPLIT_BY = 0     # 0 = no file splitting
-DEFAULT_OVERWRITE = False
-DEFAULT_COMPRESS = False
 DEFAULT_TIME_STEP = None  # None = real wall-clock timestamps
 
 def get_process_id() -> str:
@@ -131,6 +138,12 @@ PID = get_process_id()
 
 def generate_random_message(length: int) -> str:
     """Generate a random log message of specified length.
+
+    When faker is available, the message is composed from varied faker providers
+    (sentences plus contextual tokens like usernames, IPs, companies, URLs);
+    otherwise it falls back to the built-in SENTENCES list with optional random
+    detail suffixes. Either way the result is filled to at least `length` and
+    truncated to exactly `length` characters.
 
     Args:
         length: Target message length in characters
@@ -189,17 +202,39 @@ def generate_trace_id(include_trace_id: bool, trace_id_type: str) -> Optional[st
     Returns:
         Optional[str]: Generated trace ID or None
     """
-    global TRACE_ID_COUNTER
     if not include_trace_id:
         return None
 
+    counter = next(TRACE_ID_SEQ)
     if trace_id_type == "pid":
-        trace_id = f"{PID}-{TRACE_ID_COUNTER:08d}"
+        return f"{PID}-{counter:08d}"
     else:  # integer
-        trace_id = f"{TRACE_ID_COUNTER:08d}"
+        return f"{counter:08d}"
 
-    TRACE_ID_COUNTER += 1
-    return trace_id
+def parse_entry_timestamp(entry: Dict[str, Any]) -> datetime:
+    """Parse an entry's timestamp into a datetime for reformatting.
+
+    Tries ISO 8601 (datetime.fromisoformat, tolerant of a trailing 'Z' and
+    timezone offsets) and falls back to the fixed second-precision prefix.
+    Robust to custom timestamp formats a future extension might introduce.
+
+    Args:
+        entry: Log entry dict; may contain a 'timestamp' string
+
+    Returns:
+        datetime: Parsed timestamp (naive), or current time if absent/unparseable
+    """
+    ts = entry.get('timestamp')
+    if not ts:
+        return datetime.now()
+    try:
+        # Normalize a trailing 'Z' (UTC) which older fromisoformat rejects.
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        try:
+            return datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return datetime.now()
 
 def format_json_log(entry: Dict[str, Any]) -> str:
     """Format log entry as JSON."""
@@ -214,8 +249,7 @@ def format_apache_common_log(entry: Dict[str, Any]) -> str:
     host = fake.ipv4() if FAKER_AVAILABLE else "127.0.0.1"
     ident = "-"
     user = "-"
-    timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-    dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
+    dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
     request = f"{fake.http_method()} /{fake.uri_path()} HTTP/1.1" if FAKER_AVAILABLE else "GET /index.html HTTP/1.1"
     status = random.choice([200, 404, 500, 302])
@@ -227,8 +261,7 @@ def format_apache_combined_log(entry: Dict[str, Any]) -> str:
     host = fake.ipv4() if FAKER_AVAILABLE else "127.0.0.1"
     ident = "-"
     user = "-"
-    timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-    dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
+    dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
     request = f"{fake.http_method()} /{fake.uri_path()} HTTP/1.1" if FAKER_AVAILABLE else "GET /index.html HTTP/1.1"
     status = random.choice([200, 404, 500, 302])
@@ -239,8 +272,7 @@ def format_apache_combined_log(entry: Dict[str, Any]) -> str:
 
 def format_apache_error_log(entry: Dict[str, Any]) -> str:
     """Format log entry as Apache Error Log Format."""
-    timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-    dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
+    dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("%a %b %d %H:%M:%S.%f %Y")
     pid = random.randint(1000, 99999)
     client_ip = fake.ipv4() if FAKER_AVAILABLE else "127.0.0.1"
@@ -250,8 +282,7 @@ def format_apache_error_log(entry: Dict[str, Any]) -> str:
 
 def format_bsd_syslog_log(entry: Dict[str, Any]) -> str:
     """Format log entry as BSD Syslog (RFC3164)."""
-    timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-    dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
+    dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("%b %d %H:%M:%S")
     # ponytail: enrich host only; PRI/tag/structure stay fixed (RFC3164 shape).
     host = fake.hostname() if FAKER_AVAILABLE else "localhost"
@@ -261,8 +292,7 @@ def format_bsd_syslog_log(entry: Dict[str, Any]) -> str:
 
 def format_rfc5424_syslog_log(entry: Dict[str, Any]) -> str:
     """Format log entry as RFC5424 Syslog."""
-    timestamp = entry.get('timestamp', datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
-    dt = datetime.strptime(timestamp[:19], "%Y-%m-%dT%H:%M:%S")
+    dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     # ponytail: enrich host only; PRI/app/proc_id/msg_id structure stays fixed (RFC5424 shape).
     host = fake.hostname() if FAKER_AVAILABLE else "localhost"
@@ -333,6 +363,15 @@ class OutputHandler:
 
     def __init__(self, file_path: str, overwrite: bool = False, compress: bool = False,
                  split_by: int = 0, split_unit: str = "lines") -> None:
+        """Open the output target and initialize rotation counters.
+
+        Args:
+            file_path: Output file or directory path (resolved via resolve_file_path)
+            overwrite: Truncate the file ("w") instead of appending ("a")
+            compress: Gzip output (also enabled automatically for a .gz path)
+            split_by: Rotate to a new part file every N units; 0 disables splitting
+            split_unit: "lines" or "bytes" — the unit `split_by` is counted in
+        """
         self.base_path = resolve_file_path(file_path)
         self.mode_char = "w" if overwrite else "a"
         # .gz extension implies compression too (flog-style convenience).
@@ -374,15 +413,25 @@ class OutputHandler:
         return self.lines_in_part >= self.split_by
 
     def write(self, line: str) -> None:
+        """Write a single line (newline appended), rotating first if the split
+        threshold for the current part has been reached.
+
+        Args:
+            line: Log line to write (without trailing newline)
+        """
         if self._should_rotate():
             self.close()
             self.part += 1
             self._open()
         self.fh.write(line + "\n")
         self.lines_in_part += 1
+        # ponytail: byte-based split counts uncompressed UTF-8 payload, not the
+        # on-disk compressed size (unknown until flush). For .gz output the
+        # physical part files will be smaller than the --split-by threshold.
         self.bytes_in_part += len(line.encode("utf-8")) + 1
 
     def close(self) -> None:
+        """Close the current file handle if open (safe to call more than once)."""
         if self.fh:
             self.fh.close()
             self.fh = None
@@ -417,25 +466,37 @@ def parse_args() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Parsed arguments
     """
-    # Create custom description with banner
-    banner = get_banner()
-    description = f"fuzzy-train: A versatile fake log generator for testing and development - runs anywhere.\n\n{banner}"
+    # Clean one-line description at the top; banner moved to the epilog (bottom)
+    # so help opens with usage -> grouped options, and closes with banner + examples.
+    description = "fuzzy-train: A versatile fake log generator for testing and development - runs anywhere."
+
+    epilog = f"""{get_banner()}
+
+Examples:
+  Basics (short forms: -f -o -n -b -w -p -s):
+    python3 fuzzy-train.py                                             # Default JSON logs to stdout
+    python3 fuzzy-train.py --lines-per-second 5 --time-zone UTC        # Higher rate, UTC timestamps
+    python3 fuzzy-train.py -f logfmt -n 100                            # Short: logfmt, 100 lines then exit
+
+  Formats:
+    python3 fuzzy-train.py --log-format 'apache common' --output file  # Apache logs to a file
+    python3 fuzzy-train.py --log-format syslog --trace-id-type integer # Syslog with integer trace IDs
+
+  Field control:
+    python3 fuzzy-train.py --min-log-length 200 --max-log-length 300   # Custom message lengths
+    python3 fuzzy-train.py --no-timestamp --no-trace-id                # Minimal logs (message only)
+
+  Output control (bounded runs use a high rate so they finish fast):
+    python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --output file            # 1000 lines then exit
+    python3 fuzzy-train.py --max-bytes 1048576 --lines-per-second 1000 --output file     # ~1MB then exit
+    python3 fuzzy-train.py --file logs.gz --count 500 --lines-per-second 1000            # Gzip-compressed output
+    python3 fuzzy-train.py --file app.log --count 1000 --split-by 200 --lines-per-second 1000  # Split into 200-line files
+    python3 fuzzy-train.py --count 100 --time-step 1m --lines-per-second 1000            # Timestamps 1 min apart
+"""
 
     parser = argparse.ArgumentParser(
         description=description,
-        epilog="""Examples:
-  python3 fuzzy-train.py                                            # Default JSON logs to stdout
-  python3 fuzzy-train.py --log-format 'apache common' --output file # Apache logs to file
-  python3 fuzzy-train.py --lines-per-second 5 --time-zone UTC       # High rate with UTC timestamps
-  python3 fuzzy-train.py --min-log-length 200 --max-log-length 300  # Custom message lengths
-  python3 fuzzy-train.py --no-timestamp --no-trace-id               # Minimal logs (message only)
-  python3 fuzzy-train.py --log-format syslog --trace-id-type integer  # Syslog with simple trace IDs
-  python3 fuzzy-train.py --count 1000 --output file                  # Bounded: 1000 lines then exit
-  python3 fuzzy-train.py --max-bytes 1048576 --output file           # Bounded: ~1MB then exit
-  python3 fuzzy-train.py --file logs.gz --count 500                  # Gzip-compressed output
-  python3 fuzzy-train.py --file app.log --count 1000 --split-by 200  # Split into 200-line files
-  python3 fuzzy-train.py --count 100 --time-step 1m                  # 100 logs, timestamps 1min apart
-        """,
+        epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
@@ -443,11 +504,11 @@ def parse_args() -> argparse.Namespace:
 
     # Basic Options
     basic = parser.add_argument_group('Basic Options')
-    basic.add_argument("--log-format", type=str, default=DEFAULT_LOG_FORMAT, metavar="FORMAT",
+    basic.add_argument("-f", "--log-format", type=str, default=DEFAULT_LOG_FORMAT, metavar="FORMAT",
                        help=f"Output format: JSON, logfmt, 'apache common', 'apache combined', 'apache error', 'bsd syslog', syslog (default: {DEFAULT_LOG_FORMAT})")
     basic.add_argument("--lines-per-second", type=float, default=DEFAULT_LINES_PER_SECOND, metavar="RATE",
                        help=f"Generation rate (default: {DEFAULT_LINES_PER_SECOND})")
-    basic.add_argument("--output", type=str, default=DEFAULT_OUTPUT, metavar="TYPE",
+    basic.add_argument("-o", "--output", type=str, default=DEFAULT_OUTPUT, metavar="TYPE",
                        help=f"Output destination: stdout or file (default: {DEFAULT_OUTPUT})")
     basic.add_argument("--file", type=str, metavar="PATH",
                        help="File path for log output (when output=file)")
@@ -478,17 +539,17 @@ def parse_args() -> argparse.Namespace:
 
     # Output Control (flog-inspired; all opt-in, streaming stays the default)
     outctl = parser.add_argument_group('Output Control')
-    outctl.add_argument("--count", type=int, default=DEFAULT_COUNT, metavar="N",
+    outctl.add_argument("-n", "--count", type=int, default=DEFAULT_COUNT, metavar="N",
                         help="Generate exactly N lines then exit (default: 0 = infinite streaming)")
-    outctl.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
+    outctl.add_argument("-b", "--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
                         help="Generate until >= N bytes then exit (ignored when --count is set)")
-    outctl.add_argument("--overwrite", action="store_true",
+    outctl.add_argument("-w", "--overwrite", action="store_true",
                         help="Truncate the output file before writing instead of appending")
     outctl.add_argument("--compress", action="store_true",
                         help="Gzip file output (also auto-enabled when --file ends with .gz)")
-    outctl.add_argument("--split-by", type=int, default=DEFAULT_SPLIT_BY, metavar="N",
+    outctl.add_argument("-p", "--split-by", type=int, default=DEFAULT_SPLIT_BY, metavar="N",
                         help="Rotate output file every N lines (or N bytes when --max-bytes is used)")
-    outctl.add_argument("--time-step", type=str, default=DEFAULT_TIME_STEP, metavar="DURATION",
+    outctl.add_argument("-s", "--time-step", type=str, default=DEFAULT_TIME_STEP, metavar="DURATION",
                         help="Advance each log's timestamp by DURATION without real waiting (e.g. 10, 20ms, 5s, 1m)")
     return parser.parse_args()
 
@@ -503,7 +564,11 @@ def get_arg_value(args: argparse.Namespace, name: str) -> Any:
         Any: Argument value
     """
     underscore_name = name.replace('-', '_')
-    return getattr(args, underscore_name, None) or getattr(args, name, None)
+    # Use hasattr rather than `or` so explicit falsy values (0, False, "")
+    # are not masked by the fallback.
+    if hasattr(args, underscore_name):
+        return getattr(args, underscore_name)
+    return getattr(args, name, None)
 
 def validate_length_params(min_len: int, max_len: int) -> tuple[int, int]:
     """Validate and adjust min/max length parameters.
@@ -586,12 +651,12 @@ def main() -> None:
     output = args.output.lower()
     file_path = args.file
 
-    # Output-control parameters
-    count = get_arg_value(args, 'count') or 0
-    max_bytes = get_arg_value(args, 'max-bytes') or 0
-    overwrite = bool(get_arg_value(args, 'overwrite') or False)
-    compress = bool(get_arg_value(args, 'compress') or False)
-    split_by = get_arg_value(args, 'split-by') or 0
+    # Output-control parameters (argparse supplies defaults, so values are never None)
+    count = get_arg_value(args, 'count')
+    max_bytes = get_arg_value(args, 'max-bytes')
+    overwrite = bool(get_arg_value(args, 'overwrite'))
+    compress = bool(get_arg_value(args, 'compress'))
+    split_by = get_arg_value(args, 'split-by')
     time_step_raw = get_arg_value(args, 'time-step')
 
     # Validate non-negative integers
@@ -599,6 +664,11 @@ def main() -> None:
         if val < 0:
             print(f"Error: --{name} cannot be negative")
             raise SystemExit(1)
+
+    # Rate must be positive (used as 1.0/lps for pacing)
+    if lps <= 0:
+        print("Error: --lines-per-second must be greater than 0")
+        raise SystemExit(1)
 
     # --count takes precedence over --max-bytes (flog parity)
     if count > 0:
@@ -611,9 +681,12 @@ def main() -> None:
     split_unit = "bytes" if (max_bytes > 0 and count == 0) else "lines"
 
     # gzip/overwrite/split are file-only; auto-enable file output if requested
+    # (these can't apply to stdout, so file output is implied).
     file_features = compress or overwrite or split_by > 0
     if file_features and output != "file" and not file_path:
         output = "file"
+        print(f"Note: --compress/--overwrite/--split-by imply file output; writing to {DEFAULT_FILE}",
+              file=sys.stderr)
 
     # Output logic
     to_stdout = (output == "stdout") or (output == "" and not file_path)
@@ -652,7 +725,7 @@ def main() -> None:
             )
             line = format_log(log_entry, log_format)
             if to_stdout:
-                print(line)
+                print(line, flush=True)  # flush for real-time tailing in pipes/containers
             if handler:
                 handler.write(line)
 
@@ -661,7 +734,13 @@ def main() -> None:
             if synthetic_time is not None:
                 synthetic_time += timedelta(seconds=time_step)
 
-            time.sleep(1.0 / lps)
+            # ponytail: skip sub-millisecond sleeps — OS timer granularity (~1ms)
+            # would throttle throughput at high rates (e.g. 2000+ lines/sec).
+            # Ceiling: this is best-effort pacing, not a precise rate limiter;
+            # upgrade path = token-bucket/deadline scheduling if exact rates matter.
+            interval = 1.0 / lps
+            if interval >= 0.001:
+                time.sleep(interval)
     except KeyboardInterrupt:
         print("\nLog generation stopped.")
     finally:
