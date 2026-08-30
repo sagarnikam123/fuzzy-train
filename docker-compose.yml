@@ -8,15 +8,23 @@ services:
   auth-service:
     # Volume generated: 2,000 lines/sec × ~200 bytes (150 chars + JSON overhead) = ~381 KB/sec (0.38 MB/sec)
     image: sagarnikam123/fuzzy-train:latest
-    command: >
-      --lines-per-second 2000
-      --min-log-length 120
-      --max-log-length 180
-      --log-format JSON
-      --time-zone UTC
-      --output file
-      --file /logs/auth-service.log
-      --trace-id-type integer
+    command:
+      - --lines-per-second
+      - "2000"
+      - --min-log-length
+      - "120"
+      - --max-log-length
+      - "180"
+      - --log-format
+      - JSON
+      - --time-zone
+      - UTC
+      - --output
+      - file
+      - --file
+      - /logs/auth-service.log
+      - --trace-id-type
+      - integer
     volumes:
       - ./logs:/logs
     container_name: auth-logs
@@ -24,15 +32,23 @@ services:
   payment-service:
     # Volume generated: 1,500 lines/sec × ~175 bytes (125 chars + logfmt overhead) = ~251 KB/sec (0.25 MB/sec)
     image: sagarnikam123/fuzzy-train:latest
-    command: >
-      --lines-per-second 1500
-      --min-log-length 100
-      --max-log-length 150
-      --log-format logfmt
-      --time-zone UTC
-      --output file
-      --file /logs/payment-service.log
-      --trace-id-type integer
+    command:
+      - --lines-per-second
+      - "1500"
+      - --min-log-length
+      - "100"
+      - --max-log-length
+      - "150"
+      - --log-format
+      - logfmt
+      - --time-zone
+      - UTC
+      - --output
+      - file
+      - --file
+      - /logs/payment-service.log
+      - --trace-id-type
+      - integer
     volumes:
       - ./logs:/logs
     container_name: payment-logs
@@ -40,15 +56,23 @@ services:
   user-service:
     # Volume generated: 1,000 lines/sec × ~300 bytes (250 chars + Apache overhead) = ~286 KB/sec (0.29 MB/sec)
     image: sagarnikam123/fuzzy-train:latest
-    command: >
-      --lines-per-second 1000
-      --min-log-length 200
-      --max-log-length 300
-      --log-format "apache combined"
-      --time-zone UTC
-      --output file
-      --file /logs/user-service.log
-      --trace-id-type integer
+    command:
+      - --lines-per-second
+      - "1000"
+      - --min-log-length
+      - "200"
+      - --max-log-length
+      - "300"
+      - --log-format
+      - apache combined
+      - --time-zone
+      - UTC
+      - --output
+      - file
+      - --file
+      - /logs/user-service.log
+      - --trace-id-type
+      - integer
     volumes:
       - ./logs:/logs
     container_name: user-logs
