@@ -217,7 +217,6 @@ public class FuzzyTrainSkywalking {
         }
         
         // Register shutdown hook
-        final long[] finalCount = {0};
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             running.set(false);
             logger.info("Shutdown initiated. Generated {} total log entries.", logCount.get());
