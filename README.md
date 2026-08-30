@@ -15,6 +15,7 @@ fuzzy-train generates realistic fake logs in multiple formats, perfect for:
 ### Testing Log Systems
 - **Log Storage**: Loki, Elastic Stack, Graylog, Splunk, Datadog, SigNoz
 - **Log Collectors**: Fluent-bit, Vector.dev, Grafana Alloy, Promtail, Filebeat
+- **APM & Tracing Integrations**: Apache SkyWalking (see [skywalking/](skywalking/README.md))
 - **Performance Testing**: Verify ingestion rates and query performance
 - **Scalability Testing**: Test system behavior under high log volumes
 
@@ -130,14 +131,28 @@ python3 fuzzy-train.py \
     --no-trace-id
 ```
 
+#### Output to directory (auto-creates fuzzy-train.log)
+```bash
+python3 fuzzy-train.py --file /path/to/logs/
+```
+
 #### Output to both stdout and file
+Passing `--file` alongside `--output stdout` writes to both destinations at once:
 ```bash
 python3 fuzzy-train.py --output stdout --file fuzzy-train.log
 ```
 
-#### Output to directory (auto-creates fuzzy-train.log)
+#### Bounded & file output
+Generate a fixed amount then exit, overwrite instead of append, or gzip the output. These are opt-in — the default remains infinite streaming. Bounded runs use a high `--lines-per-second` so they finish fast (default rate is 1 line/second). See [Output Control](#output-control) for all options.
 ```bash
-python3 fuzzy-train.py --file /path/to/logs/
+# Exactly 1000 lines then exit
+python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --output file
+
+# Truncate (overwrite) the file instead of appending
+python3 fuzzy-train.py --count 500 --lines-per-second 1000 --output file --overwrite
+
+# Gzip output explicitly with --compress (or just use a .gz filename)
+python3 fuzzy-train.py --count 500 --lines-per-second 1000 --file app.log --compress
 ```
 
 ### Docker Usage
@@ -164,6 +179,17 @@ docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
 ```bash
 docker run -d --name fuzzy-train-log-generator sagarnikam123/fuzzy-train:latest \
     --lines-per-second 2 --log-format JSON
+```
+
+#### Bounded / gzip / split output (works in-container too)
+```bash
+# Generate 1000 lines to a mounted volume, then exit
+docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
+    --count 1000 --lines-per-second 1000 --file /logs/app.log
+
+# Gzip + split into 200-line parts (app.log.gz, app1.log.gz, ...)
+docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
+    --count 1000 --lines-per-second 1000 --split-by 200 --file /logs/app.log.gz
 ```
 
 ### Docker Compose Usage
@@ -233,62 +259,114 @@ kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
 
 ## Parameters
 
+Common options have short forms: `-f` (`--log-format`), `-o` (`--output`), `-n` (`--count`), `-b` (`--max-bytes`), `-w` (`--overwrite`), `-p` (`--split-by`), `-s` (`--time-step`).
+
 ### Basic Options
-| Parameter            | Description                                    | Default     |
-|----------------------|------------------------------------------------|-------------|
-| `-v, --version`      | Show version and exit                          | -           |
-| `--log-format`       | JSON, logfmt, 'apache common', 'apache combined', <br>'apache error', 'bsd syslog', syslog | `JSON`      |
-| `--lines-per-second` | Log lines generated per second                 | `1`         |
-| `--output`           | Output destination: stdout or file             | `stdout`    |
-| `--file`             | File or directory path for log output <br>(auto-creates directories and default filename) | `fuzzy-train.log`* |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-h, --help` | Show help message and exit | - |
+| `-v, --version` | Show version and exit | - |
+| `-f, --log-format` | Output format: `JSON`, `logfmt`, `apache common`, `apache combined`, `apache error`, `bsd syslog`, `syslog` | `JSON` |
+| `--lines-per-second` | Log lines generated per second | `1` |
+| `-o, --output` | Output destination: `stdout` or `file` | `stdout` |
+| `--file` | File or directory path for log output (auto-creates directories and default filename) | `fuzzy-train.log`* |
 
 `*` Default filename is used only when writing to file (e.g., `--output file` or a directory passed to `--file`); the plain default run writes to stdout.
 
 ### Log Content
-| Parameter            | Description                                    | Default     |
-|----------------------|------------------------------------------------|-------------|
-| `--min-log-length`   | Minimum message length in characters          | `90`        |
-| `--max-log-length`   | Maximum message length in characters          | `100`       |
-| `--time-zone`        | Timestamp timezone: local or UTC              | `local`     |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--min-log-length` | Minimum message length in characters | `90` |
+| `--max-log-length` | Maximum message length in characters | `100` |
+| `--time-zone` | Timestamp timezone: `local` or `UTC` | `local` |
 
 ### Field Control
-| Parameter            | Description                                    | Default     |
-|----------------------|------------------------------------------------|-------------|
-| `--no-trace-id`      | Exclude trace_id field                         | `false`     |
-| `--trace-id-type`    | pid (uses PID/Container ID) or <br>integer (simple counter) | `pid`       |
-| `--no-timestamp`     | Exclude timestamp field                        | `false`     |
-| `--no-log-level`     | Exclude log level field                        | `false`     |
-| `--no-length`        | Exclude message length field                   | `false`     |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--no-trace-id` | Exclude `trace_id` field | `false` |
+| `--trace-id-type` | `pid` (uses PID/Container ID) or `integer` (simple counter) | `pid` |
+| `--no-timestamp` | Exclude `timestamp` field | `false` |
+| `--no-log-level` | Exclude log `level` field | `false` |
+| `--no-length` | Exclude message `length` field | `false` |
 
 ### Output Control
 All opt-in — the default remains infinite real-time streaming.
 
-| Parameter            | Description                                    | Default     |
-|----------------------|------------------------------------------------|-------------|
-| `--count`            | Generate exactly N lines then exit             | `0` (infinite) |
-| `--max-bytes`        | Generate until ≥ N bytes then exit <br>(ignored when `--count` is set) | `0` (no cap) |
-| `--overwrite`        | Truncate the output file before writing <br>instead of appending | `false`     |
-| `--compress`         | Gzip file output (auto-enabled when <br>`--file` ends with `.gz`) | `false`     |
-| `--split-by`         | Rotate output file every N lines <br>(or N bytes when `--max-bytes` is used) | `0` (no split) |
-| `--time-step`        | Advance each log's timestamp by DURATION <br>without real waiting (e.g. `10`, `20ms`, `5s`, `1m`) | `-` (real time) |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-n, --count` | Generate exactly N lines then exit | `0` (infinite) |
+| `-b, --max-bytes` | Generate until ≥ N bytes then exit (ignored when `--count` is set) | `0` (no cap) |
+| `-w, --overwrite` | Truncate the output file before writing instead of appending | `false` |
+| `--compress` | Gzip file output (auto-enabled when `--file` ends with `.gz`) | `false` |
+| `-p, --split-by` | Rotate output file every N lines (or N bytes when `--max-bytes` is used) | `0` (no split) |
+| `-s, --time-step` | Advance each log's timestamp by DURATION without real waiting (e.g. `10`, `20ms`, `5s`, `1m`) | `-` (real time) |
 
 #### Bounded output examples
+> Bounded runs use a high `--lines-per-second` so they finish fast (the default rate is 1 line/second).
+
 ```bash
 # Generate exactly 1000 lines to a file, then exit
-python3 fuzzy-train.py --count 1000 --output file
+python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --output file
 
 # Generate ~1MB of logs then exit
-python3 fuzzy-train.py --max-bytes 1048576 --output file
+python3 fuzzy-train.py --max-bytes 1048576 --lines-per-second 1000 --output file
 
 # Gzip-compressed output (500 lines)
-python3 fuzzy-train.py --file logs.gz --count 500
+python3 fuzzy-train.py --file logs.gz --count 500 --lines-per-second 1000
 
 # Split a 1000-line run into 200-line files (app.log, app1.log, ...)
-python3 fuzzy-train.py --file app.log --count 1000 --split-by 200
+python3 fuzzy-train.py --file app.log --count 1000 --split-by 200 --lines-per-second 1000
 
 # 100 logs with timestamps spaced 1 minute apart, generated instantly
-python3 fuzzy-train.py --count 100 --time-step 1m --time-zone UTC
+python3 fuzzy-train.py --count 100 --time-step 1m --time-zone UTC --lines-per-second 1000
 ```
+
+## Verifying Output
+
+Quick ways to run the generator and confirm it produced what you expect.
+
+> **Tip:** the default rate is 1 line/second, so a bounded run like `--count 1000` would take ~1000s. Add a high `--lines-per-second` (e.g. `1000`) to finish bounded runs quickly.
+
+### Eyeball logs on stdout
+```bash
+# Generate a few JSON logs and read them
+python3 fuzzy-train.py --count 3
+
+# Pretty-print each JSON line
+python3 fuzzy-train.py --count 3 --no-trace-id | while read -r l; do echo "$l" | python3 -m json.tool; done
+
+# Try another format
+python3 fuzzy-train.py --count 3 --log-format "apache combined"
+```
+
+### Generate to a file and read it
+```bash
+python3 fuzzy-train.py --count 100 --lines-per-second 1000 --output file --file out.log
+tail -f out.log        # follow live
+wc -l out.log          # expect: 100 lines
+```
+
+### Decompress and read gzip output
+```bash
+python3 fuzzy-train.py --count 50 --lines-per-second 1000 --file out.log.gz
+gzip -dc out.log.gz | head        # read without unzipping to disk
+gzip -dc out.log.gz | wc -l       # expect: 50
+```
+
+### Validate --count and --split-by produced the right files
+```bash
+# 1000 lines split into 200-line files -> app.log, app1.log, app2.log, app3.log, app4.log
+python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --file app.log --split-by 200
+ls app*.log            # expect: 5 files
+wc -l app*.log         # each 200 lines, total 1000
+
+# Confirm exact line count for a bounded run
+python3 fuzzy-train.py --count 250 --lines-per-second 1000 --output file --file exact.log
+test "$(wc -l < exact.log)" -eq 250 && echo "OK: 250 lines"
+```
+
+### Run the automated test suite
+See [docs/BUILD.md](docs/BUILD.md#running-the-test-suite) for the pytest suite that covers every argument and their interacting combinations.
 
 ## Development
 

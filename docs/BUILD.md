@@ -3,7 +3,7 @@
 This guide covers building the `fuzzy-train` container image (single-platform and
 multi-platform), and testing it locally.
 
-The image installs [`faker`](https://pypi.org/project/Faker/) (see `requirements.txt`)
+The image installs [`faker`](https://pypi.org/project/Faker/) (see [`requirements.txt`](../requirements.txt))
 so shipped images always produce enriched logs; the script still falls back to its
 built-in generator if faker is ever absent.
 
@@ -117,6 +117,35 @@ Read gzip output on the host:
 ```bash
 gzip -dc logs/app.log.gz | head
 ```
+
+## Running the test suite
+
+The pytest suite in [`tests/`](../tests/) covers each CLI argument and the combinations that
+interact (bounded runs, gzip, split, faker fallback, etc.).
+
+```bash
+# Install test dependencies
+pip install -r requirements-dev.txt
+
+# Run the full suite (quiet)
+pytest tests/ -q
+
+# Verbose: show each test name and result
+pytest tests/ -v
+
+# Run a subset by keyword (e.g. only split-related tests)
+pytest tests/ -k split
+
+# Run a single test
+pytest tests/test_fuzzy_train.py::test_cli_count_exact_lines
+
+# Stop at the first failure, show local variables
+pytest tests/ -x -l
+```
+
+A green run ends with a line like `81 passed in ~8s`. Any failure prints the
+failing test name, the assertion, and a diff of expected vs actual so you can
+pinpoint the regression.
 
 ## Cleanup
 
