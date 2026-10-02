@@ -1,0 +1,363 @@
+# Language style fixtures for --style go
+# {timestamp} is replaced at emit time (see timestamp_format).
+#
+# Go has no exception class tree — errors are values (error interface).
+# Coverage drawn from:
+#   https://pkg.go.dev/errors
+#   https://go.dev/ref/spec#Errors
+#   https://go.dev/wiki/Errors
+#   https://go.dev/blog/error-handling-and-go
+# Plus common runtime panics and stdlib sentinels (io/fs/os/net/context/sql/json).
+language: go
+description: Go panics, wrapped errors, and stdlib sentinel dumps for multiline parsers
+timestamp_format: "%Y-%m-%dT%H:%M:%SZ"
+
+info_messages:
+  - 'ts={timestamp} level=info msg="HTTP request" method=GET path=/health status=200'
+  - 'ts={timestamp} level=info msg="worker tick" job=reconcile ok=true'
+  - 'ts={timestamp} level=debug msg="cache hit" key=session:***'
+  - 'ts={timestamp} level=warn msg="retrying upstream" attempt=2 host=api.internal'
+
+errors:
+  - name: nil-pointer-panic
+    body: |
+      {timestamp} http: panic serving 10.0.1.42:52310: runtime error: invalid memory address or nil pointer dereference
+      goroutine 42 [running]:
+      github.com/example/shop/internal/order.(*Service).Place(0xc0001a2000, {0xc0001a2140, 0x18})
+      	/app/internal/order/service.go:87 +0x54
+      github.com/example/shop/internal/api.(*Handler).CreateOrder(0xc00019e000, {0x13f0c80, 0xc0001a8000}, 0xc0001ac000)
+      	/app/internal/api/orders.go:54 +0x1a5
+      net/http.HandlerFunc.ServeHTTP(0xc0001a80c0?, {0x13f0c80?, 0xc0001a8000?}, 0x40?)
+      	/usr/local/go/src/net/http/server.go:2136 +0x29
+  - name: index-out-of-range
+    body: |
+      panic: runtime error: index out of range [0] with length 0
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/cart.(*Cart).RequireItems(0xc0000a8000)
+      	/app/internal/cart/cart.go:41 +0x65
+      main.main()
+      	/app/cmd/api/main.go:63 +0x29a
+  - name: slice-bounds
+    body: |
+      panic: runtime error: slice bounds out of range [2:1]
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/util.SlicePage(...)
+      	/app/internal/util/page.go:22 +0x45
+      github.com/example/shop/internal/api.(*Handler).List(0xc00019e000, {0x13f0c80, 0xc0001a8000}, 0xc0001ac000)
+      	/app/internal/api/list.go:41 +0x9a
+  - name: send-on-closed-channel
+    body: |
+      panic: send on closed channel
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/queue.(*Worker).Publish(0xc0000b2000, {0xc0001c0120, 0x20})
+      	/app/internal/queue/worker.go:73 +0x8a
+      github.com/example/shop/internal/api.(*Handler).Enqueue(0xc00019e000, {0x13f0c80, 0xc0001a8000}, 0xc0001ac000)
+      	/app/internal/api/enqueue.go:31 +0x12c
+  - name: close-of-nil-channel
+    body: |
+      panic: close of nil channel
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/queue.(*Worker).Stop(0x0)
+      	/app/internal/queue/worker.go:90 +0x25
+      main.main()
+      	/app/cmd/api/main.go:80 +0x1c0
+  - name: close-of-closed-channel
+    body: |
+      panic: close of closed channel
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/queue.(*Worker).Stop(0xc0000b2000)
+      	/app/internal/queue/worker.go:92 +0x3a
+      main.main()
+      	/app/cmd/api/main.go:80 +0x1c0
+  - name: concurrent-map-write
+    body: |
+      fatal error: concurrent map writes
+      
+      goroutine 51 [running]:
+      runtime.throw({0x13a2c1f?, 0x0?})
+      	/usr/local/go/src/runtime/panic.go:1077 +0x5c fp=0xc0001d1e88 sp=0xc0001d1e58 pc=0x43a85c
+      runtime.mapassign_faststr(0x12b8ea0?, 0xc0001a4000?, {0xc0001c2200?, 0x10?})
+      	/usr/local/go/src/runtime/map_faststr.go:295 +0x375
+      github.com/example/shop/internal/cache.(*Store).Set(0xc0000a6000, {0xc0001c2200, 0x10}, {0xc0001c2300, 0x18})
+      	/app/internal/cache/store.go:44 +0x65
+      created by github.com/example/shop/internal/api.(*Handler).Warm in goroutine 1
+      	/app/internal/api/warm.go:22 +0x9a
+  - name: concurrent-map-read-write
+    body: |
+      fatal error: concurrent map read and map write
+      
+      goroutine 63 [running]:
+      runtime.throw({0x13a2d10?, 0x0?})
+      	/usr/local/go/src/runtime/panic.go:1077 +0x5c
+      github.com/example/shop/internal/cache.(*Store).Get(0xc0000a6000, {0xc0001c2200, 0x10})
+      	/app/internal/cache/store.go:28 +0x4a
+  - name: integer-divide-by-zero
+    body: |
+      panic: runtime error: integer divide by zero
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/billing.AverageOrderValue(...)
+      	/app/internal/billing/aov.go:44 +0x2f
+      github.com/example/shop/internal/jobs.(*ReportJob).Run(0xc0000aa000)
+      	/app/internal/jobs/report.go:72 +0x88
+  - name: makeslice-len-out-of-range
+    body: |
+      panic: runtime error: makeslice: len out of range
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/buffer.Allocate(...)
+      	/app/internal/buffer/chunk.go:30 +0x45
+      main.main()
+      	/app/cmd/api/main.go:55 +0x120
+  - name: nil-map-assign
+    body: |
+      panic: assignment to entry in nil map
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/cache.(*Store).Set(0xc0000a6000, {0xc0001c2200, 0x10}, {0xc0001c2300, 0x18})
+      	/app/internal/cache/store.go:44 +0x65
+      main.main()
+      	/app/cmd/api/main.go:40 +0x90
+  - name: panic-nil
+    body: |
+      {timestamp} http: panic serving 10.0.1.42:52310: runtime error: panic called with nil argument
+      goroutine 42 [running]:
+      github.com/example/shop/internal/api.(*Handler).CreateOrder(...)
+      	/app/internal/api/orders.go:54 +0x1a5
+  - name: panic-string
+    body: |
+      panic: cart was empty
+      
+      goroutine 42 [running]:
+      github.com/example/shop/internal/cart.(*Cart).RequireItems(0xc0000a8000)
+      	/app/internal/cart/cart.go:41 +0x65
+      github.com/example/shop/internal/order.(*Factory).FromCart(0xc0000aa000, 0xc0000a8000)
+      	/app/internal/order/factory.go:28 +0x2f
+  - name: deadlock
+    body: |
+      fatal error: all goroutines are asleep - deadlock!
+      
+      goroutine 1 [semacquire]:
+      sync.runtime_Semacquire(0xc0000140a8?)
+      	/usr/local/go/src/runtime/sema.go:62 +0x25
+      sync.(*WaitGroup).Wait(0xc0000140a0)
+      	/usr/local/go/src/sync/waitgroup.go:116 +0x48
+      main.main()
+      	/app/cmd/api/main.go:90 +0x1e0
+      
+      goroutine 17 [chan receive]:
+      github.com/example/shop/internal/queue.(*Worker).loop(0xc0000b2000)
+      	/app/internal/queue/worker.go:55 +0x6a
+      created by main.main in goroutine 1
+      	/app/cmd/api/main.go:70 +0x140
+  - name: errors-new
+    body: |
+      {timestamp} level=error msg="inverse tachyon pulse failed" err="inverse tachyon pulse failed"
+      github.com/example/shop/internal/jobs.(*Pulse).Run
+      	/app/internal/jobs/pulse.go:22
+      main.main
+      	/app/cmd/worker/main.go:40
+  - name: fmt-errorf
+    body: |
+      {timestamp} level=error msg="user lookup failed" err="user "bimmler" (id 17) not found"
+      github.com/example/shop/internal/user.(*Repo).Find
+      	/app/internal/user/repo.go:63
+      github.com/example/shop/internal/auth.(*Service).Login
+      	/app/internal/auth/service.go:48
+  - name: fmt-errorf-wrap
+    body: |
+      {timestamp} level=error msg="place order failed" err="place order: cart was empty: require items: empty cart"
+      github.com/example/shop/internal/order.(*Service).Place
+      	/app/internal/order/service.go:87
+      github.com/example/shop/internal/api.(*Handler).CreateOrder
+      	/app/internal/api/orders.go:54
+  - name: errors-join
+    body: |
+      {timestamp} level=error msg="batch failed" err="err1
+      err2"
+      github.com/example/shop/internal/jobs.(*Batch).Run
+      	/app/internal/jobs/batch.go:44
+      main.main
+      	/app/cmd/worker/main.go:55
+  - name: errors-unwrap-chain
+    body: |
+      {timestamp} level=error msg="open config failed" err="open config: open /etc/shop/config.yaml: file does not exist"
+      github.com/example/shop/internal/config.Load
+      	/app/internal/config/load.go:28
+      main.main
+      	/app/cmd/api/main.go:22
+  - name: err-unsupported
+    body: |
+      {timestamp} level=error msg="hard link not supported" err="link /var/lib/reports/a /var/lib/reports/b: unsupported operation"
+      os.Link
+      	/usr/local/go/src/os/file_unix.go:120
+      github.com/example/shop/internal/storage.(*Disk).Link
+      	/app/internal/storage/disk.go:40
+  - name: io-eof
+    body: |
+      {timestamp} level=error msg="read body" err="EOF"
+      io.ReadAll
+      	/usr/local/go/src/io/io.go:688
+      github.com/example/shop/internal/api.(*Handler).Upload
+      	/app/internal/api/upload.go:33
+  - name: io-unexpected-eof
+    body: |
+      {timestamp} level=error msg="decode frame" err="unexpected EOF"
+      encoding/binary.Read
+      	/usr/local/go/src/encoding/binary/binary.go:250
+      github.com/example/shop/internal/codec.(*Decoder).Decode
+      	/app/internal/codec/frame.go:41
+  - name: fs-err-not-exist
+    body: |
+      {timestamp} level=error msg="open report" err="open /var/lib/reports/out.csv: file does not exist"
+      os.Open
+      	/usr/local/go/src/os/file.go:350
+      github.com/example/shop/internal/jobs.(*ReportJob).Load
+      	/app/internal/jobs/report.go:88
+  - name: fs-err-permission
+    body: |
+      {timestamp} level=error msg="write report" err="open /var/lib/reports/out.csv: permission denied"
+      os.OpenFile
+      	/usr/local/go/src/os/file.go:380
+      github.com/example/shop/internal/jobs.(*ReportJob).Write
+      	/app/internal/jobs/report.go:100
+  - name: fs-err-exist
+    body: |
+      {timestamp} level=error msg="mkdir reports" err="mkdir /var/lib/reports/out: file already exists"
+      os.Mkdir
+      	/usr/local/go/src/os/file.go:220
+      github.com/example/shop/internal/jobs.(*ReportJob).EnsureDir
+      	/app/internal/jobs/report.go:70
+  - name: fs-err-closed
+    body: |
+      {timestamp} level=error msg="read after close" err="read /var/lib/reports/out.csv: file already closed"
+      os.(*File).Read
+      	/usr/local/go/src/os/file.go:120
+      github.com/example/shop/internal/jobs.(*ReportJob).Load
+      	/app/internal/jobs/report.go:95
+  - name: os-path-error
+    body: |
+      {timestamp} level=error msg="stat config" err="stat /etc/shop/config.yaml: no such file or directory"
+      os.Stat
+      	/usr/local/go/src/os/stat.go:13
+      github.com/example/shop/internal/config.Load
+      	/app/internal/config/load.go:20
+  - name: os-deadline-exceeded
+    body: |
+      {timestamp} level=error msg="file read timed out" err="read /var/lib/reports/out.csv: i/o timeout"
+      os.(*File).Read
+      	/usr/local/go/src/os/file.go:120
+      github.com/example/shop/internal/jobs.(*ReportJob).Load
+      	/app/internal/jobs/report.go:88
+  - name: context-deadline
+    body: |
+      {timestamp} level=error msg="request canceled" err="context deadline exceeded"
+      github.com/example/shop/internal/client.(*Payment).Charge
+      	/app/internal/client/payment.go:112
+      github.com/example/shop/internal/api.(*Handler).Checkout
+      	/app/internal/api/checkout.go:64
+  - name: context-canceled
+    body: |
+      {timestamp} level=error msg="client gone" err="context canceled"
+      github.com/example/shop/internal/db.(*OrderRepo).Save
+      	/app/internal/db/order.go:91
+      github.com/example/shop/internal/api.(*Handler).CreateOrder
+      	/app/internal/api/orders.go:54
+  - name: connection-refused
+    body: |
+      {timestamp} level=error msg="upstream dial failed" err="dial tcp 10.0.2.15:5432: connect: connection refused"
+      github.com/example/shop/internal/db.(*Pool).Query
+      	/app/internal/db/pool.go:91
+      github.com/example/shop/internal/user.(*Repo).FindByEmail
+      	/app/internal/user/repo.go:63
+  - name: connection-reset
+    body: |
+      {timestamp} level=error msg="upstream reset" err="read tcp 10.0.1.10:52310->10.0.2.15:443: read: connection reset by peer"
+      github.com/example/shop/internal/client.(*Payment).Charge
+      	/app/internal/client/payment.go:112
+      github.com/example/shop/internal/api.(*Handler).Checkout
+      	/app/internal/api/checkout.go:64
+  - name: dns-error
+    body: |
+      {timestamp} level=error msg="resolve failed" err="lookup payments.internal on 10.0.0.2:53: no such host"
+      net.(*Resolver).lookupIPAddr
+      	/usr/local/go/src/net/lookup.go:300
+      github.com/example/shop/internal/client.(*Payment).Charge
+      	/app/internal/client/payment.go:100
+  - name: net-timeout
+    body: |
+      {timestamp} level=error msg="upstream timed out" err="dial tcp 10.0.2.15:443: i/o timeout"
+      net.(*Dialer).DialContext
+      	/usr/local/go/src/net/dial.go:430
+      github.com/example/shop/internal/client.(*Payment).Charge
+      	/app/internal/client/payment.go:100
+  - name: net-op-error
+    body: |
+      {timestamp} level=error msg="write failed" err="write tcp 10.0.1.10:52310->10.0.2.15:443: write: broken pipe"
+      net.(*conn).Write
+      	/usr/local/go/src/net/net.go:200
+      github.com/example/shop/internal/api.(*Handler).Stream
+      	/app/internal/api/stream.go:66
+  - name: sql-err-no-rows
+    body: |
+      {timestamp} level=error msg="user not found" err="sql: no rows in result set"
+      database/sql.(*DB).QueryRowContext
+      	/usr/local/go/src/database/sql/sql.go:1700
+      github.com/example/shop/internal/user.(*Repo).FindByEmail
+      	/app/internal/user/repo.go:63
+  - name: json-syntax
+    body: |
+      {timestamp} level=error msg="decode request" err="invalid character 'o' looking for beginning of value"
+      encoding/json.(*Decoder).Decode
+      	/usr/local/go/src/encoding/json/stream.go:50
+      github.com/example/shop/internal/api.(*Handler).CreateOrder
+      	/app/internal/api/orders.go:40
+  - name: json-unmarshal-type
+    body: |
+      {timestamp} level=error msg="decode request" err="json: cannot unmarshal string into Go struct field Order.qty of type int"
+      encoding/json.(*decodeState).unmarshal
+      	/usr/local/go/src/encoding/json/decode.go:180
+      github.com/example/shop/internal/api.(*Handler).CreateOrder
+      	/app/internal/api/orders.go:42
+  - name: http-request-canceled
+    body: |
+      {timestamp} level=error msg="proxy upstream" err="net/http: request canceled"
+      net/http.(*Transport).roundTrip
+      	/usr/local/go/src/net/http/transport.go:600
+      github.com/example/shop/internal/client.(*Inventory).GetStock
+      	/app/internal/client/inventory.go:48
+  - name: http-server-closed
+    body: |
+      {timestamp} level=error msg="listen" err="http: Server closed"
+      net/http.(*Server).Serve
+      	/usr/local/go/src/net/http/server.go:3086
+      main.main
+      	/app/cmd/api/main.go:100
+  - name: parse-error
+    body: |
+      {timestamp} level=error msg="parse sku" err="parse error on line 12, column 4"
+      github.com/example/shop/internal/util.(*SkuParser).Parse
+      	/app/internal/util/sku.go:18
+      github.com/example/shop/internal/api.(*Handler).UpdateCart
+      	/app/internal/api/cart.go:41
+  - name: sentinel-err-bad-action
+    body: |
+      {timestamp} level=error msg="action rejected" err="shop: a bad action was performed"
+      github.com/example/shop/internal/auth.(*Service).Authorize
+      	/app/internal/auth/service.go:70
+      github.com/example/shop/internal/api.(*Handler).Admin
+      	/app/internal/api/admin.go:22
+  - name: recover-logged
+    body: |
+      {timestamp} level=error msg="handler panic recovered" err="runtime error: invalid memory address or nil pointer dereference"
+      github.com/example/shop/internal/api.recoverMiddleware.func1.1
+      	/app/internal/api/middleware.go:28
+      runtime.gopanic
+      	/usr/local/go/src/runtime/panic.go:914
+      github.com/example/shop/internal/order.(*Service).Place
+      	/app/internal/order/service.go:87
