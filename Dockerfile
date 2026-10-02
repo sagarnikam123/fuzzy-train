@@ -13,8 +13,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the log generator script
+# Copy the log generator script and language style fixtures
 COPY fuzzy-train.py .
+COPY styles/ ./styles/
 
 # Set entrypoint for easy override
 ENTRYPOINT ["python", "fuzzy-train.py"]
