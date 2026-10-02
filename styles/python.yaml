@@ -1,0 +1,440 @@
+# Language style fixtures for --style python
+# {timestamp} is replaced at emit time (see timestamp_format).
+#
+# Built-in Exception / OSError coverage from:
+#   https://docs.python.org/3/library/exceptions.html
+#   https://docs.python.org/3/tutorial/errors.html
+# Warning hierarchy omitted (not typical ERROR log lines).
+# Control-flow BaseExceptions (SystemExit/GeneratorExit) omitted.
+language: python
+description: CPython tracebacks (logging + raw Traceback + chained)
+timestamp_format: "%Y-%m-%d %H:%M:%S,%3f"
+
+info_messages:
+  - "{timestamp} INFO [app.api] GET /health 200 3ms"
+  - "{timestamp} INFO [app.worker] job=resize_image status=ok duration_ms=42"
+  - "{timestamp} DEBUG [app.db] checkout connection pool=primary"
+  - "{timestamp} WARNING [app.cache] redis soft timeout key=session:***"
+
+errors:
+  - name: key-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api.py", line 88, in place_order
+          order_id = payload["order_id"]
+      KeyError: 'order_id'
+  - name: index-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/cart.py", line 41, in require_items
+          return self.items[0]
+        File "/app/app/api.py", line 88, in place_order
+          return handler(payload)
+      IndexError: list index out of range
+  - name: attribute-error-chained
+    body: |
+      Traceback (most recent call last):
+        File "/app/app/cart.py", line 41, in require_items
+          return self.items[0]
+      IndexError: list index out of range
+      
+      During handling of the above exception, another exception occurred:
+      
+      Traceback (most recent call last):
+        File "/app/app/api.py", line 79, in place_order
+          cart.require_items()
+        File "/app/app/cart.py", line 44, in require_items
+          raise RuntimeError("cart was empty") from exc
+      RuntimeError: cart was empty
+  - name: raise-from
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/service.py", line 30, in load_user
+          raise ValueError("bad id") from exc
+      ValueError: bad id
+      
+      The above exception was the direct cause of the following exception:
+      
+      Traceback (most recent call last):
+        File "/app/app/service.py", line 28, in load_user
+          uid = int(raw)
+      ValueError: invalid literal for int() with base 10: 'abc'
+  - name: type-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api.py", line 52, in create_user
+          return User(email=email.strip())
+      TypeError: 'NoneType' object has no attribute 'strip'
+  - name: type-error-operand
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/billing.py", line 118, in average_order_value
+          return total / count
+      TypeError: unsupported operand type(s) for +: 'int' and 'str'
+  - name: value-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/service.py", line 28, in load_user
+          uid = int(raw)
+      ValueError: invalid literal for int() with base 10: 'abc'
+  - name: name-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api.py", line 41, in create_user
+          return legacy_client.create(email)
+      NameError: name 'legacy_client' is not defined
+  - name: unbound-local
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/billing.py", line 90, in discount
+          return total * rate
+      UnboundLocalError: cannot access local variable 'rate' where it is not associated with a value
+  - name: attribute-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api.py", line 87, in place_order
+          return order.id
+      AttributeError: 'NoneType' object has no attribute 'id'
+  - name: import-error
+    body: |
+      Traceback (most recent call last):
+        File "/app/main.py", line 15, in <module>
+          from app.legacy import LegacyClient
+        File "/app/app/legacy.py", line 3, in <module>
+          import missing_sdk
+      ModuleNotFoundError: No module named 'missing_sdk'
+  - name: import-error-cannot
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/plugin.py", line 12, in load
+          from app.broken import Helper
+      ImportError: cannot import name 'Helper' from 'app.broken' (/app/app/broken.py)
+  - name: zero-division
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/billing.py", line 118, in average_order_value
+          return total / count
+      ZeroDivisionError: division by zero
+  - name: zero-division-mod
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/billing.py", line 130, in bucket
+          return n % size
+      ZeroDivisionError: integer division or modulo by zero
+  - name: overflow-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/codec.py", line 40, in scale
+          return math.exp(x)
+      OverflowError: math range error
+  - name: assertion-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/order/factory.py", line 31, in from_cart
+          assert items, "cart was empty"
+      AssertionError: cart was empty
+  - name: runtime-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/cart.py", line 44, in require_items
+          raise RuntimeError("cart was empty")
+      RuntimeError: cart was empty
+  - name: not-implemented
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/payments/base.py", line 18, in charge
+          raise NotImplementedError
+      NotImplementedError
+  - name: recursion-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/rules.py", line 88, in eval_rule
+          return eval_rule(node.children[0])
+        File "/app/app/rules.py", line 88, in eval_rule
+          return eval_rule(node.children[0])
+        File "/app/app/rules.py", line 88, in eval_rule
+          return eval_rule(node.children[0])
+      RecursionError: maximum recursion depth exceeded
+  - name: stop-iteration
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 70, in next_job
+          return next(self._jobs)
+      StopIteration
+  - name: stop-async-iteration
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 80, in anext_job
+          return await anext(self._jobs)
+      StopAsyncIteration
+  - name: memory-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/jobs/report.py", line 156, in load_all_rows
+          rows = list(cursor)
+      MemoryError
+  - name: buffer-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/codec.py", line 54, in encode
+          buf.extend(chunk)
+      BufferError: Existing exports of data: object cannot be re-sized
+  - name: reference-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/cache.py", line 33, in get
+          return proxy.value
+      ReferenceError: weakly-referenced object no longer exists
+  - name: system-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/native.py", line 12, in decode
+          return _native.decode(buf)
+      SystemError: <built-in function decode> returned NULL without setting an exception
+  - name: eof-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/cli.py", line 20, in prompt
+          line = input("cmd> ")
+      EOFError: EOF when reading a line
+  - name: syntax-error
+    body: |
+      {timestamp} ERROR [app.rules] failed to compile rule
+      Traceback (most recent call last):
+        File "/app/app/rules.py", line 12, in compile_rule
+          return compile(src, "<rule>", "eval")
+        File "<rule>", line 1
+          a +
+            ^
+      SyntaxError: invalid syntax
+  - name: indentation-error
+    body: |
+      {timestamp} ERROR [app.plugin] failed to load plugin
+      Traceback (most recent call last):
+        File "/app/app/plugin.py", line 12, in load
+          exec(src, ns)
+        File "<plugin>", line 3
+          return 1
+          ^
+      IndentationError: expected an indented block after 'if' statement on line 2
+  - name: tab-error
+    body: |
+      {timestamp} ERROR [app.plugin] failed to load plugin
+      Traceback (most recent call last):
+        File "/app/app/plugin.py", line 12, in load
+          exec(src, ns)
+        File "<plugin>", line 4
+          x = 1
+               ^
+      TabError: inconsistent use of tabs and spaces in indentation
+  - name: unicode-decode
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/util/text.py", line 18, in decode
+          return raw.decode("utf-8")
+      UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+  - name: unicode-encode
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/util/text.py", line 24, in encode
+          return text.encode("ascii")
+      UnicodeEncodeError: 'ascii' codec can't encode character '\u20ac' in position 0: ordinal not in range(128)
+  - name: unicode-translate
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/util/text.py", line 30, in translate
+          return text.encode("utf-7")
+      UnicodeTranslateError: can't translate characters in position 0-1
+  - name: os-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 44, in write_report
+          with open("/var/lib/reports/out.csv", "w") as f:
+      OSError: [Errno 5] Input/output error: '/var/lib/reports/out.csv'
+  - name: file-not-found
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/jobs/report.py", line 88, in load
+          with open("/var/lib/reports/out.csv") as f:
+      FileNotFoundError: [Errno 2] No such file or directory: '/var/lib/reports/out.csv'
+  - name: file-exists
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/jobs/report.py", line 92, in write
+          os.mkdir("/var/lib/reports/out")
+      FileExistsError: [Errno 17] File exists: '/var/lib/reports/out'
+  - name: permission-error
+    body: |
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 44, in write_report
+          with open("/var/lib/reports/out.csv", "w") as f:
+      PermissionError: [Errno 13] Permission denied: '/var/lib/reports/out.csv'
+  - name: is-a-directory
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/jobs/report.py", line 88, in load
+          with open("/var/lib/reports") as f:
+      IsADirectoryError: [Errno 21] Is a directory: '/var/lib/reports'
+  - name: not-a-directory
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/jobs/report.py", line 95, in list_dir
+          os.listdir("/var/lib/reports/out.csv")
+      NotADirectoryError: [Errno 20] Not a directory: '/var/lib/reports/out.csv'
+  - name: timeout-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/client/payment.py", line 64, in charge
+          resp = session.post(url, json=payload, timeout=5)
+      TimeoutError: [Errno 110] Connection timed out
+  - name: blocking-io
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api/stream.py", line 40, in read_ready
+          return sock.recv(4096)
+      BlockingIOError: [Errno 11] Resource temporarily unavailable
+  - name: child-process
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 110, in reap
+          os.waitpid(pid, 0)
+      ChildProcessError: [Errno 10] No child processes
+  - name: process-lookup
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 120, in kill
+          os.kill(pid, signal.SIGTERM)
+      ProcessLookupError: [Errno 3] No such process
+  - name: interrupted-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 54, in run
+          time.sleep(60)
+      InterruptedError: [Errno 4] Interrupted system call
+  - name: connection-error
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/client/payment.py", line 64, in charge
+          resp = session.post(url, json=payload, timeout=5)
+        File "/usr/local/lib/python3.12/site-packages/requests/sessions.py", line 637, in post
+          return self.request("POST", url, data=data, json=json, **kwargs)
+        File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 519, in send
+          raise ConnectionError(e, request=request)
+      requests.exceptions.ConnectionError: HTTPConnectionPool(host='payments.internal', port=443): Max retries exceeded with url: /v1/charge (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7f8c1a0>: Failed to establish a new connection: [Errno 111] Connection refused'))
+  - name: connection-refused
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/client/payment.py", line 64, in charge
+          resp = session.post(url, json=payload, timeout=5)
+      ConnectionRefusedError: [Errno 111] Connection refused
+  - name: connection-reset
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/client/payment.py", line 64, in charge
+          resp = session.post(url, json=payload, timeout=5)
+      ConnectionResetError: [Errno 104] Connection reset by peer
+  - name: connection-aborted
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/client/payment.py", line 64, in charge
+          resp = session.post(url, json=payload, timeout=5)
+      ConnectionAbortedError: [Errno 103] Software caused connection abort
+  - name: broken-pipe
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api/stream.py", line 66, in write
+          sock.sendall(chunk)
+      BrokenPipeError: [Errno 32] Broken pipe
+  - name: keyboard-interrupt
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/worker.py", line 54, in run
+          result = job()
+        File "/usr/local/lib/python3.12/threading.py", line 1010, in _wait_for_tstate_lock
+          elif lock.acquire(block, timeout):
+      KeyboardInterrupt
+  - name: exception-group
+    body: |
+      {timestamp} ERROR [app.worker] task group failed
+        + Exception Group Traceback (most recent call last):
+        |   File "/app/app/worker.py", line 54, in run
+        |     async with asyncio.TaskGroup() as tg:
+        |   File "/usr/local/lib/python3.12/asyncio/taskgroups.py", line 145, in __aexit__
+        |     raise me from None
+        | ExceptionGroup: unhandled errors in a TaskGroup (2 sub-exceptions)
+        +-+---------------- 1 ----------------
+          | Traceback (most recent call last):
+          |   File "/app/app/worker.py", line 60, in job_a
+          |     await charge()
+          | ConnectionRefusedError: [Errno 111] Connection refused
+          +---------------- 2 ----------------
+          | Traceback (most recent call last):
+          |   File "/app/app/worker.py", line 70, in job_b
+          |     return payload["order_id"]
+          | KeyError: 'order_id'
+          +------------------------------------
+  - name: json-decode
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/api.py", line 31, in parse_body
+          return json.loads(raw)
+        File "/usr/local/lib/python3.12/json/__init__.py", line 346, in loads
+          return _default_decoder.decode(s)
+        File "/usr/local/lib/python3.12/json/decoder.py", line 337, in decode
+          obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+        File "/usr/local/lib/python3.12/json/decoder.py", line 355, in raw_decode
+          raise JSONDecodeError("Expecting value", s, err.value) from None
+      json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+  - name: timeout-requests
+    body: |
+      {timestamp} ERROR [app.api] unhandled exception
+      Traceback (most recent call last):
+        File "/app/app/client/payment.py", line 64, in charge
+          resp = session.post(url, json=payload, timeout=5)
+        File "/usr/local/lib/python3.12/site-packages/requests/adapters.py", line 545, in send
+          raise ReadTimeout(e, request=request)
+      requests.exceptions.ReadTimeout: HTTPConnectionPool(host='payments.internal', port=443): Read timed out. (read timeout=5)
