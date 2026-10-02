@@ -26,7 +26,7 @@ fuzzy-train generates realistic fake logs in multiple formats, perfect for:
 - **Scalability Testing**: Test system behavior under high log volumes
 
 ### Development & Operations
-- **Parser Development**: Test regex patterns and log parsing rules
+- **Parser Development**: Test regex patterns and multiline parsers (language styles)
 - **Alert Testing**: Generate specific patterns to trigger monitoring alerts
 - **Dashboard Development**: Create realistic data for visualization
 - **Training & Demos**: Provide realistic data for learning environments
@@ -79,6 +79,24 @@ What the logs look like (varies each run). Commands are shown once here; flag de
 135.104.18.192 - - [02/Oct/2026:12:59:54 +0000] "POST /app/wp-content HTTP/1.1" 200 91 "http://www.jones.org/" "Mozilla/5.0 (Windows; U; Windows 98; Win 9x 4.90) AppleWebKit/535.40.4 (KHTML, like Gecko) Version/4.1 Safari/535.40.4"
 ```
 
+### Language styles (multiline stacks) — `python3 fuzzy-train.py --style java --error-every 3 -n 6`
+
+Timestamps are filled at emit time (`{timestamp}` in `styles/*.yaml`); each error is chosen at random from that language’s fixture pool:
+
+```text
+2026-10-02 15:30:45,123 INFO  [http-nio-8080-exec-2] com.example.api.HealthController - health check ok
+2026-10-02 15:30:45,456 DEBUG [http-nio-8080-exec-5] com.example.cart.CartService - cart id=c-1042 items=3
+2026-10-02 15:30:45,789 ERROR [http-nio-8080-exec-1] com.example.api.OrderController - Failed to place order
+java.lang.NullPointerException: Cannot invoke "com.example.order.Order.getId()" because "order" is null
+	at com.example.api.OrderController.place(OrderController.java:87)
+	... 12 more
+Caused by: java.lang.IllegalStateException: cart was empty
+	at com.example.cart.CartService.requireItems(CartService.java:41)
+	... 14 more
+```
+
+Built-in styles: `java`, `python`, `go`, `rust`, `csharp`, `ruby`, `javascript` (aliases: `node`, `c#`, `cs`, `dotnet`). See [Language styles](#language-styles) and [`styles/README.md`](styles/README.md).
+
 ## Features
 
 - **Formats**: JSON, logfmt, HTTP access, Apache (common/combined/error), BSD syslog (RFC3164), Syslog (RFC5424)
@@ -88,6 +106,7 @@ What the logs look like (varies each run). Commands are shown once here; flag de
 - **Realistic data**: optional [faker](https://pypi.org/project/Faker/) enrichment (see [Quick Start](#quick-start)); zero-dependency fallback
 - **Output**: stdout, file, or both; directory paths auto-create `fuzzy-train.log`
 - **Opt-in controls**: `--count` / `--max-bytes`, `--compress`, `--split-by`, `--time-step`, `--failure-rate`, `--arrival` (see [Parameters](#parameters))
+- **Language styles** (opt-in): `--style` loads realistic multiline stacks from [`styles/`](styles/) (Java SE exceptions/errors, Python built-ins, Go panics/sentinels, Rust/C#/Ruby/Node). Random fixture each error; live `{timestamp}`; schedule with `--error-every` / `--error-interval` / `--failure-rate` (see [Language styles](#language-styles))
 
 ## Important Notes
 
@@ -169,8 +188,8 @@ Passing `--file` alongside `--output stdout` writes to both destinations at once
 python3 fuzzy-train.py --output stdout --file fuzzy-train.log
 ```
 
-#### Bounded, gzip, HTTP / failure-rate
-See [Output Control](#output-control) for `--count` / `--max-bytes` / `--compress` / `--split-by` / `--time-step`, and [Log Content](#log-content) for `--failure-rate`, `--get-post-ratio`, durations, and `--arrival`. Shapes: [Sample output](#sample-output).
+#### Bounded, gzip, HTTP / failure-rate / language styles
+See [Output Control](#output-control) for `--count` / `--max-bytes` / `--compress` / `--split-by` / `--time-step`, and [Log Content](#log-content) for `--failure-rate`, `--style`, `--error-every`, `--error-interval`. Shapes: [Sample output](#sample-output).
 
 ```bash
 # Full HTTP simulator-style knobs (opt-in; defaults elsewhere unchanged)
@@ -178,8 +197,21 @@ python3 fuzzy-train.py -f http --failure-rate 0.05 --get-post-ratio 0.9 \
     --get-duration-ms 500 --post-duration-ms 2000 --arrival exponential \
     --lines-per-second 2 -n 20
 
-# Bias ERROR/5xx on JSON without switching format
+# Bias ERROR/HTTP 500 on JSON without switching format
 python3 fuzzy-train.py --failure-rate 0.2 -n 50 --lines-per-second 1000
+
+# Real Java stacks every 1000 events (plain multiline for Fluent Bit / Vector)
+python3 fuzzy-train.py --style java --error-every 1000 --lines-per-second 5
+
+# Python traceback ~once per 5 minutes
+python3 fuzzy-train.py --style python --error-interval 5m --lines-per-second 2
+
+# Go panics / wrapped errors at 5% (random fixture from styles/go.yaml)
+python3 fuzzy-train.py --style go --failure-rate 0.05 -n 40 --lines-per-second 1000
+
+# Synthetic clock: style stamps advance with --time-step (no real waiting)
+python3 fuzzy-train.py --style java --error-every 1 -n 5 --time-step 1h --time-zone UTC \
+    --lines-per-second 1000
 ```
 
 ### Docker Usage
@@ -278,6 +310,42 @@ kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
 
 > **Note**: Edit parameters in the `args` section of the YAML files in `k8s/` directory to customize log generation.
 
+
+## Language styles
+
+Opt-in multiline application logs for testing Fluent Bit / Vector (and similar) multiline parsers. Details and YAML schema: [`styles/README.md`](styles/README.md).
+
+| `--style` | Aliases | What you get |
+|-----------|---------|--------------|
+| `java` | | ~100 JVM Exception/Error stacks (NPE, SQL, OOM, SSL, …) |
+| `python` | | ~50 CPython built-ins + OSError tree + ExceptionGroup |
+| `go` | | Panics, `errors` wrap/`Join`, io/fs/os/net/context/sql sentinels |
+| `rust` | | `unwrap` / assert / poison / overflow panics |
+| `csharp` | `c#`, `cs`, `dotnet` | .NET NullReference, SQL, timeout, HttpRequest, … |
+| `ruby` | | Rails/Ruby NoMethodError, RecordNotFound, ECONNREFUSED, … |
+| `javascript` | `node`, `nodejs`, `js` | Node TypeError, ECONNREFUSED, JSON SyntaxError, … |
+
+**Behavior**
+
+- Requires [PyYAML](https://pypi.org/project/PyYAML/) (`pip install -r requirements.txt`; included in Docker images).
+- Defaults to `--log-format plain` so stacks keep real newlines. Override with `-f json` (stack inside `message`) or `-f logfmt` (newlines escaped).
+- Incompatible with `-f http` / `apache common` / `apache combined` (access formats ignore the message).
+- Each error emit picks a **random** fixture from that language’s `errors[]` pool.
+- Templates use live placeholders: `{timestamp}`, `{iso}`, `{date}`, `{time}`, `{epoch}`, `{epoch_ms}` — honor `--time-zone` and `--time-step`.
+- Schedule errors with `--error-every N`, `--error-interval DURATION`, or `--failure-rate` (precedence: every → interval → rate). Info lines fill the gaps from `info_messages[]`.
+
+```bash
+# Java: random SE8-style exception every other event
+python3 fuzzy-train.py --style java --error-every 2 -n 10 --lines-per-second 1000
+
+# Node alias; all errors (good for multiline parser soak)
+python3 fuzzy-train.py --style node --failure-rate 1.0 -n 5 --lines-per-second 1000
+
+# C# alias + synthetic hour steps
+python3 fuzzy-train.py --style c# --error-every 1 -n 3 --time-step 1h --time-zone UTC \
+    --lines-per-second 1000
+```
+
 ## Parameters
 
 Common options have short forms: `-f` (`--log-format`), `-o` (`--output`), `-n` (`--count`), `-b` (`--max-bytes`), `-w` (`--overwrite`), `-p` (`--split-by`), `-s` (`--time-step`).
@@ -287,7 +355,7 @@ Common options have short forms: `-f` (`--log-format`), `-o` (`--output`), `-n` 
 |-----------|-------------|---------|
 | `-h, --help` | Show help message and exit | - |
 | `-v, --version` | Show version and exit | - |
-| `-f, --log-format` | Output format: `JSON`, `logfmt`, `http`, `apache common`, `apache combined`, `apache error`, `bsd syslog`, `syslog` | `JSON` |
+| `-f, --log-format` | Output format: `JSON`, `logfmt`, `plain`, `http`, `apache common`, `apache combined`, `apache error`, `bsd syslog`, `syslog` | `JSON` |
 | `--lines-per-second` | Log lines generated per second | `1` |
 | `-o, --output` | Output destination: `stdout` or `file` | `stdout` |
 | `--file` | File or directory path for log output (auto-creates directories and default filename) | `fuzzy-train.log`* |
@@ -305,14 +373,17 @@ Common options have short forms: `-f` (`--log-format`), `-o` (`--output`), `-n` 
 | `--get-duration-ms` | Mean GET duration (ms) for `--log-format http` | `500` |
 | `--post-duration-ms` | Mean POST duration (ms) for `--log-format http` | `2000` |
 | `--arrival` | Inter-arrival pacing: `fixed` or `exponential` | `fixed` |
+| `--style` | Language style from `styles/<NAME>.yaml`: `java`, `python`, `go`, `rust`, `csharp`, `ruby`, `javascript` (aliases: `node`, `c#`, `cs`, `dotnet`). Auto-selects `plain`. Incompatible with `http` / apache access formats | `-` (unset) |
+| `--error-every` | With `--style`: emit a full multiline error every N **events** (random fixture from that style) | `0` (off) |
+| `--error-interval` | With `--style`: emit a full multiline error every DURATION (`5m`, `30s`, …); first event emits immediately | `-` (off) |
 
 ### Field Control
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `--no-trace-id` | Exclude `trace_id` field | `false` |
 | `--trace-id-type` | `pid` (uses PID/Container ID) or `integer` (simple counter) | `pid` |
-| `--no-timestamp` | Exclude `timestamp` field | `false` |
-| `--no-log-level` | Exclude log `level` field | `false` |
+| `--no-timestamp` | Exclude `timestamp` from JSON/logfmt (plain `--style` still embeds stamps from the YAML template) | `false` |
+| `--no-log-level` | Exclude `level` from JSON/logfmt (plain `--style` still embeds level text from the YAML template) | `false` |
 | `--no-length` | Exclude message `length` field | `false` |
 
 ### Output Control
@@ -320,12 +391,12 @@ All opt-in — the default remains infinite real-time streaming.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `-n, --count` | Generate exactly N lines then exit | `0` (infinite) |
+| `-n, --count` | Generate exactly N **events** then exit. With `--style`, one event may be a multiline stack | `0` (infinite) |
 | `-b, --max-bytes` | Generate until ≥ N bytes then exit (ignored when `--count` is set) | `0` (no cap) |
 | `-w, --overwrite` | Truncate the output file before writing instead of appending | `false` |
 | `--compress` | Gzip file output (auto-enabled when `--file` ends with `.gz`) | `false` |
 | `-p, --split-by` | Rotate output file every N lines (or N bytes when `--max-bytes` is used) | `0` (no split) |
-| `-s, --time-step` | Advance each log's timestamp by DURATION without real waiting (e.g. `10`, `20ms`, `5s`, `1m`) | `-` (real time) |
+| `-s, --time-step` | Advance each event's timestamp by DURATION without real waiting (also drives style `{timestamp}` / `{iso}`) | `-` (real time) |
 
 #### Bounded output examples
 > Bounded runs use a high `--lines-per-second` so they finish fast (the default rate is 1 line/second).
