@@ -1,0 +1,93 @@
+# Language style fixtures for --style javascript / node
+# {timestamp} is replaced at emit time (see timestamp_format).
+language: javascript
+description: Node.js Error stacks for multiline parser testing
+timestamp_format: "%Y-%m-%dT%H:%M:%S.%3fZ"
+
+info_messages:
+  - "{timestamp} INFO (api): GET /health 200 3ms"
+  - "{timestamp} INFO (worker): job=resize status=ok"
+  - "{timestamp} DEBUG (db): pool checkout ok"
+  - "{timestamp} WARN (cache): soft timeout key=session:***"
+
+errors:
+  - name: type-error
+    body: |
+      {timestamp} ERROR (api): Failed to place order
+      TypeError: Cannot read properties of null (reading 'id')
+          at OrderController.place (/app/src/controllers/order.js:87:22)
+          at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)
+          at next (/app/node_modules/express/lib/router/route.js:149:13)
+          at Route.dispatch (/app/node_modules/express/lib/router/route.js:119:3)
+          at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)
+          at /app/node_modules/express/lib/router/index.js:284:15
+          at Function.process_params (/app/node_modules/express/lib/router/index.js:346:12)
+          at next (/app/node_modules/express/lib/router/index.js:280:10)
+          at /app/src/middleware/auth.js:42:5
+
+  - name: unhandled-rejection
+    body: |
+      node:internal/process/promises:289
+                  triggerUncaughtException(err, true /* fromPromise */);
+                  ^
+
+      Error: cart was empty
+          at CartService.requireItems (/app/src/services/cart.js:41:11)
+          at OrderFactory.fromCart (/app/src/services/orderFactory.js:28:10)
+          at OrderController.place (/app/src/controllers/order.js:79:28)
+          at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+      Node.js v20.11.1
+
+  - name: reference-error
+    body: |
+      {timestamp} ERROR (api): unhandled exception on POST /users
+      ReferenceError: legacyClient is not defined
+          at UserController.create (/app/src/controllers/user.js:41:18)
+          at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)
+          at next (/app/node_modules/express/lib/router/route.js:149:13)
+          at Route.dispatch (/app/node_modules/express/lib/router/route.js:119:3)
+
+  - name: json-parse
+    body: |
+      {timestamp} ERROR (api): failed to parse request body
+      SyntaxError: Unexpected token o in JSON at position 1
+          at JSON.parse (<anonymous>)
+          at parseBody (/app/src/middleware/json.js:12:25)
+          at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)
+          at trim_prefix (/app/node_modules/express/lib/router/index.js:328:13)
+          at /app/node_modules/express/lib/router/index.js:286:9
+
+  - name: connection-refused
+    body: |
+      {timestamp} ERROR (client): payment upstream unreachable
+      Error: connect ECONNREFUSED 10.0.2.15:443
+          at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1555:16)
+          at PaymentClient.charge (/app/src/clients/payment.js:112:18)
+          at CheckoutController.pay (/app/src/controllers/checkout.js:64:28)
+          at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      {
+        errno: -111,
+        code: 'ECONNREFUSED',
+        syscall: 'connect',
+        address: '10.0.2.15',
+        port: 443
+      }
+
+  - name: timeout
+    body: |
+      {timestamp} ERROR (client): upstream timed out
+      Error: timeout of 5000ms exceeded
+          at createError (/app/node_modules/axios/lib/core/createError.js:16:15)
+          at RedirectableRequest.handleRequestTimeout (/app/node_modules/axios/lib/adapters/http.js:369:16)
+          at PaymentClient.charge (/app/src/clients/payment.js:118:11)
+          at CheckoutController.pay (/app/src/controllers/checkout.js:64:28)
+
+  - name: range-error
+    body: |
+      {timestamp} ERROR (worker): stack overflow in recursive job
+      RangeError: Maximum call stack size exceeded
+          at processJob (/app/src/workers/resize.js:44:15)
+          at processJob (/app/src/workers/resize.js:48:5)
+          at processJob (/app/src/workers/resize.js:48:5)
+          at processJob (/app/src/workers/resize.js:48:5)
