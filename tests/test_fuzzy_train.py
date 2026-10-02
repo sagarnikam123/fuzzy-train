@@ -692,3 +692,153 @@ def test_cli_http_unset_failure_rate_all_200(script_path):
             assert "status=500" not in line
             assert "status=404" not in line
 
+# ---------------------------------------------------------------------------
+# Language styles / multiline stacks (--style, --error-every, plain)
+# ---------------------------------------------------------------------------
+
+def test_load_style_java(ft):
+    style = ft.load_style("java")
+    assert style["language"] == "java"
+    assert style["info_messages"]
+    assert style["errors"]
+    assert "NullPointerException" in style["errors"][0]["body"]
+    assert "\n" in style["errors"][0]["body"]
+
+
+def test_load_style_python(ft):
+    style = ft.load_style("python")
+    assert any("Traceback" in e["body"] for e in style["errors"])
+
+
+def test_load_style_missing_exits(ft):
+    with pytest.raises(SystemExit):
+        ft.load_style("no-such-lang")
+
+
+def test_should_emit_style_error_every(ft):
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    ok, _ = ft.should_emit_style_error(2, None, 3, None, None, now)
+    assert ok is True
+    ok, _ = ft.should_emit_style_error(0, None, 3, None, None, now)
+    assert ok is False
+
+
+def test_format_plain_preserves_newlines(ft):
+    body = "line1\nline2\nline3"
+    assert ft.format_plain_log({"message": body}) == body
+
+
+def test_cli_style_error_every_emits_stack(script_path):
+    r = _run(script_path, "--style", "java", "--error-every", "2",
+             "--count", "4", "--lines-per-second", "1000")
+    assert r.returncode == 0
+    # Any builtin java fixture (large SE8 Exception/Error pool).
+    assert "Exception" in r.stdout or "Error" in r.stdout
+    assert "	at " in r.stdout or "at com.example" in r.stdout or "at java." in r.stdout
+
+
+def test_cli_style_python_traceback(script_path):
+    r = _run(script_path, "--style", "python", "--failure-rate", "1.0",
+             "-n", "1", "--lines-per-second", "1000")
+    assert r.returncode == 0
+    assert "Traceback (most recent call last):" in r.stdout
+
+
+def test_cli_without_style_unchanged_json(script_path):
+    r = _run(script_path, "-n", "2", "--lines-per-second", "1000", "--no-trace-id")
+    assert r.returncode == 0
+    for line in r.stdout.splitlines():
+        if line.strip():
+            json.loads(line)
+
+
+def test_cli_help_shows_style(script_path):
+    r = _run(script_path, "--help")
+    assert "--style" in r.stdout
+    assert "--error-every" in r.stdout
+    assert "--error-interval" in r.stdout
+    assert "plain" in r.stdout
+
+@pytest.mark.parametrize("name,needle", [
+    ("java", "NullPointerException"),
+    ("python", "Traceback"),
+    ("go", "panic"),
+    ("rust", "panicked at"),
+    ("csharp", "NullReferenceException"),
+    ("ruby", "NoMethodError"),
+    ("javascript", "TypeError"),
+    ("node", "TypeError"),   # alias
+    ("c#", "NullReferenceException"),  # alias
+])
+def test_load_all_builtin_styles(ft, name, needle):
+    style = ft.load_style(name)
+    assert style["errors"]
+    assert any(needle in e["body"] for e in style["errors"])
+
+def test_render_style_timestamp_java(ft):
+    from datetime import datetime, timezone
+    style = ft.load_style("java")
+    now = datetime(2026, 10, 2, 15, 30, 45, 123456, tzinfo=timezone.utc)
+    out = ft.render_style_text(
+        "{timestamp} INFO example", now, style
+    )
+    assert out.startswith("2026-10-02 15:30:45,123 ")
+    assert "2026-10-02 12:00:00" not in out
+
+
+def test_cli_style_uses_live_timestamp(script_path):
+    r = _run(script_path, "--style", "java", "--failure-rate", "0.0",
+             "-n", "1", "--lines-per-second", "1000")
+    assert r.returncode == 0
+    # Leading log4j-style stamp must be present (live clock, not a bare leftover brace).
+    assert "{timestamp}" not in r.stdout
+    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} ", r.stdout)
+    assert "INFO" in r.stdout or "WARN" in r.stdout or "DEBUG" in r.stdout
+
+def test_render_style_text_tolerates_braces(ft):
+    """Rust/JS fixtures contain `{...}` that must not crash format substitution."""
+    from datetime import datetime, timezone
+    style = ft.load_style("rust")
+    now = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
+    body = next(e["body"] for e in style["errors"] if e["name"] == "mutex-poisoned")
+    out = ft.render_style_text(body, now, style)
+    assert "PoisonError { .. }" in out
+
+
+def test_cli_style_rust_and_javascript_no_crash(script_path):
+    for name in ("rust", "javascript"):
+        r = _run(script_path, "--style", name, "--failure-rate", "1.0",
+                 "-n", "25", "--lines-per-second", "5000")
+        assert r.returncode == 0, r.stderr
+        assert r.stdout.strip()
+
+
+def test_cli_style_rejects_http_format(script_path):
+    r = _run(script_path, "--style", "java", "-f", "http", "-n", "1")
+    assert r.returncode != 0
+    assert "incompatible" in (r.stderr + r.stdout).lower()
+
+
+def test_resolve_style_clock_honors_timezone(ft):
+    from datetime import datetime, timezone
+    base = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
+    utc = ft.resolve_style_clock(base, "UTC")
+    local = ft.resolve_style_clock(base, "local")
+    assert utc.utcoffset().total_seconds() == 0
+    assert local.tzinfo is not None
+
+
+def test_parse_duration_error_mentions_flag(ft, capsys):
+    with pytest.raises(SystemExit):
+        ft.parse_duration("nope", "--error-interval")
+    out = capsys.readouterr().out
+    assert "--error-interval" in out
+
+
+def test_format_logfmt_escapes_newlines(ft):
+    line = ft.format_logfmt_log({"message": "line1\nline2\"x"})
+    assert "\n" not in line
+    assert "line1\\nline2" in line
+    assert '\\"' in line or '\"' in line
+
