@@ -515,3 +515,180 @@ def test_cli_count_zero_streams_then_interrupt(script_path):
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+# ---------------------------------------------------------------------------
+# Failure-rate / HTTP access / arrival (opt-in; defaults must stay unchanged)
+# ---------------------------------------------------------------------------
+
+def test_choose_log_level_unset_uses_all_levels(ft):
+    # With failure_rate=None, every LOG_LEVEL must be reachable (legacy mix).
+    seen = {ft.choose_log_level(None) for _ in range(200)}
+    assert seen == set(ft.LOG_LEVELS)
+
+
+def test_choose_log_level_rate_one_always_error(ft):
+    assert all(ft.choose_log_level(1.0) == "ERROR" for _ in range(50))
+
+
+def test_choose_log_level_rate_zero_never_error(ft):
+    assert all(ft.choose_log_level(0.0) != "ERROR" for _ in range(50))
+
+
+def test_choose_http_status_synced_with_failed_flag(ft):
+    assert ft.choose_http_status(0.5, failed=True) == 500
+    assert ft.choose_http_status(0.5, failed=False) == 200
+
+
+def test_choose_http_status_unset_uses_legacy_mix(ft):
+    seen = {ft.choose_http_status(None) for _ in range(200)}
+    assert seen == set(ft.DEFAULT_HTTP_STATUSES)
+
+
+def test_format_http_shape(ft):
+    entry = {
+        "timestamp": "2026-01-01T00:00:00.000000Z",
+        "level": "INFO",
+        "method": "GET",
+        "url": "/health",
+        "status": 200,
+        "duration_ms": 42,
+        "message": "x",
+    }
+    line = ft.format_http_log(entry)
+    assert line.startswith("2026-01-01T00:00:00.000000Z ")
+    assert "level=info" in line
+    assert "method=GET" in line
+    assert "url=/health" in line
+    assert "status=200" in line
+    assert "duration=42ms" in line
+
+
+def test_apache_uses_entry_status_and_method_when_set(ft):
+    entry = {
+        "timestamp": "2026-01-01T00:00:00",
+        "level": "ERROR",
+        "message": "boom",
+        "method": "POST",
+        "url": "/api",
+        "status": 500,
+    }
+    common = ft.format_apache_common_log(entry)
+    assert '"POST /api HTTP/1.1" 500 ' in common
+
+
+def test_cli_default_json_schema_unchanged(script_path):
+    # Cloning the repo and running with no new flags must still emit plain JSON.
+    r = _run(script_path, "--count", "5", "--lines-per-second", "1000", "--no-trace-id")
+    assert r.returncode == 0
+    for line in r.stdout.splitlines():
+        if not line.strip():
+            continue
+        obj = json.loads(line)
+        assert set(obj.keys()) <= {"timestamp", "level", "message", "length", "trace_id"}
+        assert "method" not in obj and "status" not in obj and "duration_ms" not in obj
+
+
+def test_cli_failure_rate_one_all_error(script_path):
+    r = _run(script_path, "--count", "30", "--lines-per-second", "1000",
+             "--failure-rate", "1.0", "--no-trace-id", "--no-length")
+    assert r.returncode == 0
+    levels = [json.loads(l)["level"] for l in r.stdout.splitlines() if l.strip()]
+    assert levels and all(lvl == "ERROR" for lvl in levels)
+
+
+def test_cli_failure_rate_zero_no_error(script_path):
+    r = _run(script_path, "--count", "30", "--lines-per-second", "1000",
+             "--failure-rate", "0.0", "--no-trace-id", "--no-length")
+    assert r.returncode == 0
+    levels = [json.loads(l)["level"] for l in r.stdout.splitlines() if l.strip()]
+    assert levels and all(lvl != "ERROR" for lvl in levels)
+
+
+def test_cli_failure_rate_invalid(script_path):
+    r = _run(script_path, "--failure-rate", "1.5", "--count", "1", "--lines-per-second", "1000")
+    assert r.returncode != 0
+    assert "failure-rate" in r.stderr.lower() or "failure-rate" in r.stdout.lower()
+
+
+def test_cli_http_format_fields(script_path):
+    r = _run(script_path, "--log-format", "http", "--count", "5",
+             "--lines-per-second", "1000", "--failure-rate", "0.0",
+             "--get-post-ratio", "1.0", "--no-trace-id")
+    assert r.returncode == 0
+    lines = [l for l in r.stdout.splitlines() if l.strip()]
+    assert len(lines) == 5
+    for line in lines:
+        assert "method=GET" in line
+        assert "status=200" in line
+        assert "duration=" in line and line.rstrip().endswith("ms")
+        assert "url=" in line
+
+
+def test_cli_http_failure_rate_all_500(script_path):
+    r = _run(script_path, "-f", "http", "--count", "20", "--lines-per-second", "1000",
+             "--failure-rate", "1.0", "--no-trace-id")
+    assert r.returncode == 0
+    for line in r.stdout.splitlines():
+        if line.strip():
+            assert "status=500" in line
+            assert "level=error" in line
+
+
+def test_cli_help_shows_failure_rate_and_http(script_path):
+    r = _run(script_path, "--help")
+    assert r.returncode == 0
+    for flag in ["--failure-rate", "--get-post-ratio", "--get-duration-ms",
+                 "--post-duration-ms", "--arrival", "http"]:
+        assert flag in r.stdout
+
+
+def test_cli_arrival_exponential_runs(script_path):
+    r = _run(script_path, "--count", "3", "--lines-per-second", "1000",
+             "--arrival", "exponential", "--no-trace-id")
+    assert r.returncode == 0
+    assert len([l for l in r.stdout.splitlines() if l.strip()]) == 3
+
+
+def test_format_http_omits_blank_timestamp(ft):
+    entry = {"level": "ERROR", "method": "GET", "url": "/", "status": 500, "duration_ms": 1}
+    line = ft.format_http_log(entry)
+    assert not line.startswith(" ")
+    assert line.startswith("level=error")
+    assert "status=500" in line
+
+
+def test_cli_http_no_log_level_keeps_synced_level(script_path):
+    # --no-log-level must not desync http level vs status under --failure-rate.
+    r = _run(script_path, "-f", "http", "--count", "20", "--lines-per-second", "1000",
+             "--failure-rate", "1.0", "--no-log-level", "--no-trace-id")
+    assert r.returncode == 0
+    for line in r.stdout.splitlines():
+        if line.strip():
+            assert "level=error" in line
+            assert "status=500" in line
+
+
+def test_cli_http_no_timestamp_still_emits_ts(script_path):
+    r = _run(script_path, "-f", "http", "--count", "3", "--lines-per-second", "1000",
+             "--no-timestamp", "--no-trace-id", "--failure-rate", "0.0")
+    assert r.returncode == 0
+    for line in r.stdout.splitlines():
+        if not line.strip():
+            continue
+        assert not line.startswith(" ")
+        # leading ISO-ish timestamp still present for http access shape
+        assert line[0].isdigit()
+        assert "level=" in line
+
+
+def test_cli_http_unset_failure_rate_all_200(script_path):
+    # -f http without --failure-rate => simulator-style 0% failures (all 200).
+    r = _run(script_path, "-f", "http", "--count", "40", "--lines-per-second", "1000",
+             "--no-trace-id")
+    assert r.returncode == 0
+    for line in r.stdout.splitlines():
+        if line.strip():
+            assert "status=200" in line
+            assert "status=500" not in line
+            assert "status=404" not in line
+
