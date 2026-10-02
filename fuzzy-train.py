@@ -86,7 +86,7 @@ SENTENCES = [
 ]
 
 # Constants
-__version__ = "2.5.0"
+__version__ = "2.6.0"
 DETAIL_PROBABILITY = 0.3
 # Trace ID sequence (itertools.count avoids a mutable module global + `global` stmt)
 TRACE_ID_SEQ = itertools.count(1)
