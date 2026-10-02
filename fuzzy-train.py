@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """fuzzy-train: a versatile fake log generator for testing and development.
 
-Streams or batch-generates fake logs in multiple formats (JSON, logfmt, Apache
-common/combined/error, BSD RFC3164 and RFC5424 syslog). Log content and format
-fields are enriched with realistic data via the optional `faker` package when
-installed, and fall back to a built-in zero-dependency generator otherwise.
+Streams or batch-generates fake logs in multiple formats (JSON, logfmt, HTTP
+access, Apache common/combined/error, BSD RFC3164 and RFC5424 syslog). Log
+content and format fields are enriched with realistic data via the optional
+`faker` package when installed, and fall back to a built-in zero-dependency
+generator otherwise.
 
 Output control (all opt-in; infinite real-time streaming is the default):
 bounded generation by line count or byte size, file overwrite, gzip output,
 file splitting/rotation, and fake-time timestamp stepping.
+
+HTTP access simulation (all opt-in; default JSON/logfmt/Apache behavior is
+unchanged): --failure-rate, --get-post-ratio, --get-duration-ms,
+--post-duration-ms, --arrival exponential, and --log-format http.
 """
 
 import argparse
+import math
 import random
 import time
 import string
@@ -41,6 +47,8 @@ except ImportError:
 
 # Log levels and example sentences
 LOG_LEVELS = ["INFO", "ERROR", "DEBUG", "WARN"]
+NON_ERROR_LEVELS = [lvl for lvl in LOG_LEVELS if lvl != "ERROR"]
+DEFAULT_HTTP_STATUSES = [200, 404, 500, 302]
 SENTENCES = [
     "Processing request from client.",
     "Database connection established successfully.",
@@ -65,7 +73,7 @@ SENTENCES = [
 ]
 
 # Constants
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 DETAIL_PROBABILITY = 0.3
 # Trace ID sequence (itertools.count avoids a mutable module global + `global` stmt)
 TRACE_ID_SEQ = itertools.count(1)
@@ -107,6 +115,14 @@ DEFAULT_COUNT = 0        # 0 = infinite streaming (today's default)
 DEFAULT_MAX_BYTES = 0    # 0 = no byte cap
 DEFAULT_SPLIT_BY = 0     # 0 = no file splitting
 DEFAULT_TIME_STEP = None  # None = real wall-clock timestamps
+
+# HTTP / failure-rate defaults (all opt-in). None = legacy random mix unchanged.
+DEFAULT_FAILURE_RATE = None
+DEFAULT_GET_POST_RATIO = None  # None: unused except http format (uses 0.9)
+DEFAULT_HTTP_GET_POST_RATIO = 0.9
+DEFAULT_GET_DURATION_MS = 500
+DEFAULT_POST_DURATION_MS = 2000
+DEFAULT_ARRIVAL = "fixed"  # fixed | exponential
 
 def get_process_id() -> str:
     """Get process identifier based on environment (PID for local, container ID for containers).
@@ -211,6 +227,56 @@ def generate_trace_id(include_trace_id: bool, trace_id_type: str) -> Optional[st
     else:  # integer
         return f"{counter:08d}"
 
+
+def choose_log_level(failure_rate: Optional[float], failed: Optional[bool] = None) -> str:
+    """Pick a log level.
+
+    When failure_rate is None, preserves the legacy uniform mix over LOG_LEVELS.
+    When set, ERROR is emitted with that probability; otherwise a non-ERROR level.
+    Pass `failed` to keep level and HTTP status in sync for one line.
+    """
+    if failure_rate is None:
+        return random.choice(LOG_LEVELS)
+    if failed is None:
+        failed = random.random() < failure_rate
+    return "ERROR" if failed else random.choice(NON_ERROR_LEVELS)
+
+
+def choose_http_status(failure_rate: Optional[float], failed: Optional[bool] = None) -> int:
+    """Pick an HTTP status code.
+
+    When failure_rate is None, preserves the legacy uniform mix.
+    When set, 500 on failure and 200 on success (simulator-style).
+    """
+    if failure_rate is None:
+        return random.choice(DEFAULT_HTTP_STATUSES)
+    if failed is None:
+        failed = random.random() < failure_rate
+    return 500 if failed else 200
+
+
+def choose_http_method(get_post_ratio: Optional[float],
+                       default_ratio: float = DEFAULT_HTTP_GET_POST_RATIO) -> str:
+    """Pick GET vs POST from a ratio (default 0.9 GET, matching the web simulator)."""
+    ratio = default_ratio if get_post_ratio is None else get_post_ratio
+    return "GET" if random.random() < ratio else "POST"
+
+
+def choose_duration_ms(method: str, get_avg_ms: float, post_avg_ms: float) -> int:
+    """Exponential duration (ms) with mean matching the method's average."""
+    avg = get_avg_ms if method.upper() == "GET" else post_avg_ms
+    if avg <= 0:
+        return 0
+    return int(math.floor(random.expovariate(1.0 / avg)))
+
+
+def choose_http_url() -> str:
+    """Pick a request path for HTTP access logs."""
+    if FAKER_AVAILABLE:
+        return "/" + fake.uri_path()
+    return "/"
+
+
 def parse_entry_timestamp(entry: Dict[str, Any]) -> datetime:
     """Parse an entry's timestamp into a datetime for reformatting.
 
@@ -251,8 +317,14 @@ def format_apache_common_log(entry: Dict[str, Any]) -> str:
     user = "-"
     dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
-    request = f"{fake.http_method()} /{fake.uri_path()} HTTP/1.1" if FAKER_AVAILABLE else "GET /index.html HTTP/1.1"
-    status = random.choice([200, 404, 500, 302])
+    method = entry.get("method")
+    if method is None:
+        method = fake.http_method() if FAKER_AVAILABLE else "GET"
+    path = entry.get("url") or (("/" + fake.uri_path()) if FAKER_AVAILABLE else "/index.html")
+    request = f"{method} {path} HTTP/1.1"
+    status = entry.get("status")
+    if status is None:
+        status = random.choice(DEFAULT_HTTP_STATUSES)
     size = len(entry['message'])
     return f'{host} {ident} {user} {tstr} "{request}" {status} {size}'
 
@@ -263,8 +335,14 @@ def format_apache_combined_log(entry: Dict[str, Any]) -> str:
     user = "-"
     dt = parse_entry_timestamp(entry)
     tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
-    request = f"{fake.http_method()} /{fake.uri_path()} HTTP/1.1" if FAKER_AVAILABLE else "GET /index.html HTTP/1.1"
-    status = random.choice([200, 404, 500, 302])
+    method = entry.get("method")
+    if method is None:
+        method = fake.http_method() if FAKER_AVAILABLE else "GET"
+    path = entry.get("url") or (("/" + fake.uri_path()) if FAKER_AVAILABLE else "/index.html")
+    request = f"{method} {path} HTTP/1.1"
+    status = entry.get("status")
+    if status is None:
+        status = random.choice(DEFAULT_HTTP_STATUSES)
     size = len(entry['message'])
     referer = fake.url() if FAKER_AVAILABLE else "https://example.com/"
     ua = fake.user_agent() if FAKER_AVAILABLE else "Mozilla/5.0 (compatible; FakeBot/1.0)"
@@ -302,12 +380,31 @@ def format_rfc5424_syslog_log(entry: Dict[str, Any]) -> str:
     pri = "<13>"  # user.notice
     return f'{pri}1 {tstr} {host} {app} {proc_id} {msg_id} - {entry["message"]}'
 
+def format_http_log(entry: Dict[str, Any]) -> str:
+    """Format as HTTP access log (logfmt-style), matching other/web-server-logs-simulator.py.
+
+    Shape: `<timestamp> level=... method=... url=... status=... duration=...ms`
+    Only emitted when --log-format http is selected (opt-in).
+    Timestamp is omitted (not left blank) when absent; level must be provided by
+    the caller so it stays synced with status under --failure-rate.
+    """
+    ts = entry.get("timestamp")
+    level = str(entry["level"]).lower() if "level" in entry else "info"
+    method = entry.get("method", "GET")
+    url = entry.get("url", "/")
+    status = entry.get("status", 200)
+    duration = entry.get("duration_ms", 0)
+    body = f"level={level} method={method} url={url} status={status} duration={duration}ms"
+    # Leading timestamp (no key=) matches the reference simulator for drop-in familiarity.
+    return f"{ts} {body}" if ts else body
+
+
 def format_log(entry: Dict[str, Any], log_format: str) -> str:
     """Format log entry according to specified format.
 
     Args:
         entry: Log entry dictionary
-        log_format: Target format (JSON, logfmt, apache, syslog, etc.)
+        log_format: Target format (JSON, logfmt, http, apache, syslog, etc.)
 
     Returns:
         str: Formatted log line
@@ -318,6 +415,8 @@ def format_log(entry: Dict[str, Any], log_format: str) -> str:
         return format_json_log(entry)
     elif format_lower == "logfmt":
         return format_logfmt_log(entry)
+    elif format_lower == "http":
+        return format_http_log(entry)
     elif format_lower == "apache common":
         return format_apache_common_log(entry)
     elif format_lower == "apache combined":
@@ -481,6 +580,12 @@ Examples:
   Formats:
     python3 fuzzy-train.py --log-format 'apache common' --output file  # Apache logs to a file
     python3 fuzzy-train.py --log-format syslog --trace-id-type integer # Syslog with integer trace IDs
+    python3 fuzzy-train.py --log-format http --failure-rate 0.05       # HTTP access logs (simulator-style)
+
+  HTTP / failure simulation (opt-in; defaults unchanged without these flags):
+    python3 fuzzy-train.py --failure-rate 0.1 -n 100 --lines-per-second 1000
+    python3 fuzzy-train.py -f http --get-post-ratio 0.9 --get-duration-ms 500 --post-duration-ms 2000
+    python3 fuzzy-train.py --arrival exponential --lines-per-second 2
 
   Field control:
     python3 fuzzy-train.py --min-log-length 200 --max-log-length 300   # Custom message lengths
@@ -505,9 +610,12 @@ Examples:
     # Basic Options
     basic = parser.add_argument_group('Basic Options')
     basic.add_argument("-f", "--log-format", type=str, default=DEFAULT_LOG_FORMAT, metavar="FORMAT",
-                       help=f"Output format: JSON, logfmt, 'apache common', 'apache combined', 'apache error', 'bsd syslog', syslog (default: {DEFAULT_LOG_FORMAT})")
+                       help=f"Output format: JSON, logfmt, http, 'apache common', 'apache combined', 'apache error', 'bsd syslog', syslog (default: {DEFAULT_LOG_FORMAT})")
     basic.add_argument("--lines-per-second", type=float, default=DEFAULT_LINES_PER_SECOND, metavar="RATE",
                        help=f"Generation rate (default: {DEFAULT_LINES_PER_SECOND})")
+    basic.add_argument("--arrival", type=str, default=DEFAULT_ARRIVAL, metavar="MODE",
+                       choices=["fixed", "exponential"],
+                       help=f"Inter-arrival pacing: fixed (sleep 1/rate) or exponential (default: {DEFAULT_ARRIVAL})")
     basic.add_argument("-o", "--output", type=str, default=DEFAULT_OUTPUT, metavar="TYPE",
                        help=f"Output destination: stdout or file (default: {DEFAULT_OUTPUT})")
     basic.add_argument("--file", type=str, metavar="PATH",
@@ -522,6 +630,14 @@ Examples:
     content.add_argument("--time-zone", type=str, default=DEFAULT_TIME_ZONE, metavar="ZONE",
                          choices=["local", "UTC", "utc", "LOCAL"],
                          help=f"Timestamp timezone: local or UTC (default: {DEFAULT_TIME_ZONE})")
+    content.add_argument("--failure-rate", type=float, default=DEFAULT_FAILURE_RATE, metavar="RATE",
+                         help="Probability of ERROR / HTTP 500 (0.0-1.0). Default: unset = legacy random mix")
+    content.add_argument("--get-post-ratio", type=float, default=DEFAULT_GET_POST_RATIO, metavar="RATIO",
+                         help="P(GET) vs POST for http/apache (0.0-1.0). http format defaults to 0.9 when unset")
+    content.add_argument("--get-duration-ms", type=float, default=DEFAULT_GET_DURATION_MS, metavar="MS",
+                         help=f"Mean GET duration in ms for http format (default: {DEFAULT_GET_DURATION_MS})")
+    content.add_argument("--post-duration-ms", type=float, default=DEFAULT_POST_DURATION_MS, metavar="MS",
+                         help=f"Mean POST duration in ms for http format (default: {DEFAULT_POST_DURATION_MS})")
 
     # Field Control
     fields = parser.add_argument_group('Field Control (use --no-* to exclude fields)')
@@ -650,6 +766,11 @@ def main() -> None:
     log_format = args.log_format
     output = args.output.lower()
     file_path = args.file
+    failure_rate = get_arg_value(args, 'failure-rate')
+    get_post_ratio = get_arg_value(args, 'get-post-ratio')
+    get_duration_ms = get_arg_value(args, 'get-duration-ms')
+    post_duration_ms = get_arg_value(args, 'post-duration-ms')
+    arrival = (get_arg_value(args, 'arrival') or DEFAULT_ARRIVAL).lower()
 
     # Output-control parameters (argparse supplies defaults, so values are never None)
     count = get_arg_value(args, 'count')
@@ -668,6 +789,16 @@ def main() -> None:
     # Rate must be positive (used as 1.0/lps for pacing)
     if lps <= 0:
         print("Error: --lines-per-second must be greater than 0")
+        raise SystemExit(1)
+
+    if failure_rate is not None and not (0.0 <= failure_rate <= 1.0):
+        print("Error: --failure-rate must be between 0.0 and 1.0")
+        raise SystemExit(1)
+    if get_post_ratio is not None and not (0.0 <= get_post_ratio <= 1.0):
+        print("Error: --get-post-ratio must be between 0.0 and 1.0")
+        raise SystemExit(1)
+    if get_duration_ms <= 0 or post_duration_ms <= 0:
+        print("Error: --get-duration-ms and --post-duration-ms must be greater than 0")
         raise SystemExit(1)
 
     # --count takes precedence over --max-bytes (flog parity)
@@ -702,6 +833,13 @@ def main() -> None:
     # Synthetic clock base for --time-step
     synthetic_time = datetime.now(timezone.utc) if time_step is not None else None
 
+    format_lower = log_format.lower()
+    is_http = format_lower == "http"
+    is_apache_access = format_lower in ("apache common", "apache combined")
+    # http format mirrors the simulator: unset --failure-rate means 0% failures
+    # (always 200), not the legacy apache multi-status mix.
+    effective_failure_rate = 0.0 if (is_http and failure_rate is None) else failure_rate
+
     lines_written = 0
     bytes_written = 0
     try:
@@ -712,7 +850,11 @@ def main() -> None:
             if max_bytes > 0 and bytes_written >= max_bytes:
                 break
 
-            log_level = random.choice(LOG_LEVELS)
+            # One roll drives level + status when a failure rate applies.
+            failed = None if effective_failure_rate is None else (
+                random.random() < effective_failure_rate
+            )
+            log_level = choose_log_level(effective_failure_rate, failed)
             trace_id = generate_trace_id(include_trace_id, trace_id_type)
             message_length = random.randint(min_len, max_len)
             message = generate_random_message(message_length)
@@ -723,6 +865,28 @@ def main() -> None:
                 timestamp, log_level, message, trace_id,
                 include_timestamp, include_log_level, include_length
             )
+
+            # Opt-in HTTP fields: only for --log-format http, or when apache
+            # knobs are explicitly set (legacy apache random mix otherwise).
+            if is_http:
+                # Access-line shape always needs timestamp + level so status/level
+                # stay synced; --no-timestamp / --no-log-level only trim JSON/logfmt.
+                log_entry["timestamp"] = timestamp
+                log_entry["level"] = log_level
+                method = choose_http_method(get_post_ratio)
+                log_entry["method"] = method
+                log_entry["url"] = choose_http_url()
+                log_entry["status"] = choose_http_status(effective_failure_rate, failed)
+                log_entry["duration_ms"] = choose_duration_ms(
+                    method, get_duration_ms, post_duration_ms
+                )
+            elif is_apache_access:
+                # Apache lines have no level field; --failure-rate only drives status.
+                if failure_rate is not None:
+                    log_entry["status"] = choose_http_status(failure_rate, failed)
+                if get_post_ratio is not None:
+                    log_entry["method"] = choose_http_method(get_post_ratio)
+
             line = format_log(log_entry, log_format)
             if to_stdout:
                 print(line, flush=True)  # flush for real-time tailing in pipes/containers
@@ -734,13 +898,17 @@ def main() -> None:
             if synthetic_time is not None:
                 synthetic_time += timedelta(seconds=time_step)
 
-            # ponytail: skip sub-millisecond sleeps — OS timer granularity (~1ms)
-            # would throttle throughput at high rates (e.g. 2000+ lines/sec).
-            # Ceiling: this is best-effort pacing, not a precise rate limiter;
-            # upgrade path = token-bucket/deadline scheduling if exact rates matter.
-            interval = 1.0 / lps
-            if interval >= 0.001:
-                time.sleep(interval)
+            # ponytail: fixed mode skips sub-millisecond sleeps — OS timer granularity
+            # (~1ms) would throttle throughput at high rates (e.g. 2000+ lines/sec).
+            # Exponential always sleeps the drawn gap so mean rate stays ~lps
+            # (matches the web-server simulator). Ceiling: best-effort pacing.
+            if arrival == "exponential":
+                # Mean inter-arrival = 1/lps (same mean as fixed mode).
+                time.sleep(random.expovariate(lps))
+            else:
+                interval = 1.0 / lps
+                if interval >= 0.001:
+                    time.sleep(interval)
     except KeyboardInterrupt:
         print("\nLog generation stopped.")
     finally:
