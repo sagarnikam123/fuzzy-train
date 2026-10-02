@@ -1,0 +1,80 @@
+# Language style fixtures for --style csharp
+# {timestamp} is replaced at emit time (see timestamp_format).
+language: csharp
+description: .NET exception stacks for multiline parser testing
+timestamp_format: "%Y-%m-%d %H:%M:%S.%3f +00:00"
+
+info_messages:
+  - "{timestamp} [INF] Microsoft.AspNetCore.Hosting.Diagnostics: Request starting GET /health"
+  - "{timestamp} [INF] Shop.Workers.CleanupJob: Purged 12 expired sessions"
+  - "{timestamp} [DBG] Shop.Cart.CartService: Cart c-1042 has 3 items"
+  - "{timestamp} [WRN] Shop.Api.RateLimiter: Soft limit approaching for apiKey=ak_***"
+
+errors:
+  - name: null-reference
+    body: |
+      {timestamp} [ERR] Shop.Api.OrderController: Failed to place order
+      System.NullReferenceException: Object reference not set to an instance of an object.
+         at Shop.Api.OrderController.PlaceAsync(OrderRequest request) in /app/Shop.Api/OrderController.cs:line 87
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ActionMethodExecutor.TaskOfActionResultExecutor.Execute(IActionResultTypeMapper mapper, ObjectMethodExecutor executor, Object context, ObjectMethodExecutorAwaitable awaitable)
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeActionMethodAsync>g__Logged|12_1(ControllerActionInvoker invoker)
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeNextActionFilterAsync>g__Awaited|10_0(ControllerActionInvoker invoker, Task lastTask, State next, Scope scope, Object state, Boolean isCompleted)
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.Rethrow(ActionExecutedContextSealed context)
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.Next(State& next, Scope& scope, Object& state, Boolean& isCompleted)
+         --- End of inner exception stack trace ---
+         at Shop.Cart.CartService.RequireItems() in /app/Shop.Cart/CartService.cs:line 41
+         at Shop.Order.OrderFactory.FromCart(Cart cart) in /app/Shop.Order/OrderFactory.cs:line 28
+         at Shop.Api.OrderController.PlaceAsync(OrderRequest request) in /app/Shop.Api/OrderController.cs:line 79
+
+  - name: sql-exception
+    body: |
+      {timestamp} [ERR] Shop.Data.UserRepository: query failed
+      Microsoft.Data.SqlClient.SqlException (0x80131904): Invalid column name 'emial'.
+         at Microsoft.Data.SqlClient.SqlConnection.OnError(SqlException exception, Boolean breakConnection, Action`1 wrapCloseInAction)
+         at Microsoft.Data.SqlClient.SqlCommand.<>c.<ExecuteDbDataReaderAsync>b__195_0(Task`1 result)
+         at System.Threading.Tasks.ContinuationResultTaskFromResultTask`2.InnerInvoke()
+         at Shop.Data.UserRepository.FindByEmailAsync(String email) in /app/Shop.Data/UserRepository.cs:line 63
+         at Shop.Services.AuthService.LoginAsync(LoginRequest request) in /app/Shop.Services/AuthService.cs:line 48
+
+  - name: argument-null
+    body: |
+      {timestamp} [ERR] Shop.Api.UserController: invalid request
+      System.ArgumentNullException: Value cannot be null. (Parameter 'email')
+         at Shop.Api.UserController.CreateAsync(CreateUserRequest request) in /app/Shop.Api/UserController.cs:line 41
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeActionMethodAsync>g__Logged|12_1(ControllerActionInvoker invoker)
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeNextActionFilterAsync>g__Awaited|10_0(ControllerActionInvoker invoker, Task lastTask, State next, Scope scope, Object state, Boolean isCompleted)
+
+  - name: timeout
+    body: |
+      {timestamp} [ERR] Shop.Clients.PaymentClient: upstream call timed out
+      System.TimeoutException: The operation has timed out.
+         at Shop.Clients.PaymentClient.ChargeAsync(ChargeRequest request, CancellationToken ct) in /app/Shop.Clients/PaymentClient.cs:line 112
+         at Shop.Api.CheckoutController.PayAsync(PayRequest request) in /app/Shop.Api/CheckoutController.cs:line 64
+         at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeActionMethodAsync>g__Logged|12_1(ControllerActionInvoker invoker)
+
+  - name: invalid-operation
+    body: |
+      {timestamp} [ERR] Shop.Cart.CartService: cart state invalid
+      System.InvalidOperationException: Collection was modified; enumeration operation may not execute.
+         at System.Collections.Generic.List`1.Enumerator.MoveNextRare()
+         at Shop.Cart.CartService.EvictExpired() in /app/Shop.Cart/CartService.cs:line 88
+         at Shop.Cart.CartService.Get(String cartId) in /app/Shop.Cart/CartService.cs:line 54
+         at Shop.Api.AuthFilter.OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next) in /app/Shop.Api/AuthFilter.cs:line 37
+
+  - name: http-request
+    body: |
+      {timestamp} [ERR] Shop.Clients.InventoryClient: upstream unreachable
+      System.Net.Http.HttpRequestException: Connection refused (inventory.internal:8080)
+       ---> System.Net.Sockets.SocketException (111): Connection refused
+         at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+         --- End of inner exception stack trace ---
+         at System.Net.Http.HttpConnectionPool.ConnectToTcpHostAsync(String host, Int32 port, HttpRequestMessage initialRequest, Boolean async, CancellationToken cancellationToken)
+         at Shop.Clients.InventoryClient.GetStockAsync(String sku) in /app/Shop.Clients/InventoryClient.cs:line 48
+         at Shop.Api.CatalogController.GetAsync(String sku) in /app/Shop.Api/CatalogController.cs:line 29
+
+  - name: task-canceled
+    body: |
+      {timestamp} [ERR] Shop.Api.OrdersController: client disconnected
+      System.Threading.Tasks.TaskCanceledException: A task was canceled.
+         at Shop.Data.OrderRepository.SaveAsync(Order order, CancellationToken ct) in /app/Shop.Data/OrderRepository.cs:line 91
+         at Shop.Api.OrdersController.CreateAsync(CreateOrderRequest request, CancellationToken ct) in /app/Shop.Api/OrdersController.cs:line 54
