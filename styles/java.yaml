@@ -1,0 +1,688 @@
+# Language style fixtures for --style java
+# {timestamp} is replaced at emit time (see timestamp_format).
+#
+# Exception / Error coverage drawn from Java SE 8 docs:
+#   https://docs.oracle.com/javase/8/docs/api/java/lang/Exception.html
+#   https://docs.oracle.com/javase/8/docs/api/java/lang/Error.html
+#   https://docs.oracle.com/javase/8/docs/api/java/lang/RuntimeException.html
+#   https://docs.oracle.com/javase/8/docs/api/java/io/IOException.html
+# Desktop/UI/MIDI/print-only types omitted (unlikely in app-server logs).
+language: java
+description: JVM exception and error stacks (log4j-style + nested causes)
+timestamp_format: "%Y-%m-%d %H:%M:%S,%3f"
+
+info_messages:
+  - "{timestamp} INFO  [http-nio-8080-exec-2] com.example.api.HealthController - health check ok"
+  - "{timestamp} INFO  [scheduling-1] com.example.jobs.CleanupJob - purged 12 expired sessions"
+  - "{timestamp} DEBUG [http-nio-8080-exec-5] com.example.cart.CartService - cart id=c-1042 items=3"
+  - "{timestamp} WARN  [http-nio-8080-exec-3] com.example.api.RateLimiter - soft limit approaching for apiKey=ak_***"
+
+errors:
+  - name: null-pointer
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NullPointerException: Cannot invoke "com.example.order.Order.getId()" because "order" is null
+      	at com.example.api.OrderController.place(OrderController.java:87)
+      	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+      	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+      Caused by: java.lang.IllegalStateException: cart was empty
+      	at com.example.cart.CartService.requireItems(CartService.java:41)
+      	at com.example.order.OrderFactory.fromCart(OrderFactory.java:28)
+  - name: class-cast
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ClassCastException: class java.lang.String cannot be cast to class java.lang.Integer
+      	at com.example.api.UserController.parseId(UserController.java:52)
+      	at com.example.api.UserController.show(UserController.java:33)
+  - name: illegal-argument
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IllegalArgumentException: email must not be blank
+      	at com.example.api.UserController.create(UserController.java:41)
+      	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+  - name: number-format
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NumberFormatException: For input string: "abc"
+      	at java.base/java.lang.NumberFormatException.forInputString(NumberFormatException.java:67)
+      	at java.base/java.lang.Integer.parseInt(Integer.java:668)
+      	at com.example.api.OrderController.parseQty(OrderController.java:120)
+  - name: illegal-state
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IllegalStateException: Cannot call sendError() after the response has been committed
+      	at org.apache.catalina.connector.ResponseFacade.sendError(ResponseFacade.java:472)
+      	at com.example.api.ErrorFilter.doFilter(ErrorFilter.java:58)
+  - name: index-oob
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IndexOutOfBoundsException: Index 3 out of bounds for length 2
+      	at java.base/jdk.internal.util.Preconditions.outOfBounds(Preconditions.java:64)
+      	at com.example.cart.CartService.getItem(CartService.java:71)
+  - name: array-index-oob
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ArrayIndexOutOfBoundsException: Index 0 out of bounds for length 0
+      	at com.example.cart.CartService.requireItems(CartService.java:41)
+      	at com.example.order.OrderFactory.fromCart(OrderFactory.java:28)
+  - name: string-index-oob
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.StringIndexOutOfBoundsException: begin 5, end 2, length 4
+      	at java.base/java.lang.String.substring(String.java:1939)
+      	at com.example.util.SkuParser.prefix(SkuParser.java:18)
+  - name: arithmetic
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ArithmeticException: / by zero
+      	at com.example.billing.AverageOrderValue.compute(AverageOrderValue.java:44)
+      	at com.example.jobs.ReportJob.run(ReportJob.java:72)
+  - name: unsupported-op
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.UnsupportedOperationException: remove
+      	at java.base/java.util.ImmutableCollections.uoe(ImmutableCollections.java:142)
+      	at com.example.cache.SessionStore.evict(SessionStore.java:66)
+  - name: no-such-element
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.NoSuchElementException: No value present
+      	at java.base/java.util.Optional.get(Optional.java:143)
+      	at com.example.service.UserService.require(UserService.java:55)
+  - name: concurrent-modification
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.ConcurrentModificationException
+      	at java.base/java.util.HashMap$HashIterator.nextNode(HashMap.java:1597)
+      	at com.example.cache.SessionStore.evictExpired(SessionStore.java:88)
+  - name: empty-stack
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.EmptyStackException
+      	at java.base/java.util.Stack.peek(Stack.java:102)
+      	at com.example.parser.TokenStack.top(TokenStack.java:21)
+  - name: negative-array
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NegativeArraySizeException: -1
+      	at com.example.buffer.ChunkBuffer.allocate(ChunkBuffer.java:30)
+      	at com.example.jobs.ExportJob.run(ExportJob.java:51)
+  - name: array-store
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ArrayStoreException: java.lang.Integer
+      	at com.example.util.TypedArray.put(TypedArray.java:19)
+      	at com.example.api.BatchController.ingest(BatchController.java:77)
+  - name: security
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.SecurityException: Permission denied: access denied ("java.io.FilePermission" "/etc/passwd" "read")
+      	at java.base/java.lang.SecurityManager.checkPermission(SecurityManager.java:322)
+      	at com.example.admin.DiagController.readHost(DiagController.java:40)
+  - name: rejected-execution
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.concurrent.RejectedExecutionException: Task rejected from java.util.concurrent.ThreadPoolExecutor
+      	at java.base/java.util.concurrent.ThreadPoolExecutor$AbortPolicy.rejectedExecution(ThreadPoolExecutor.java:2065)
+      	at com.example.worker.JobDispatcher.submit(JobDispatcher.java:48)
+  - name: completion
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.concurrent.CompletionException: java.util.concurrent.TimeoutException
+      	at java.base/java.util.concurrent.CompletableFuture.reportJoin(CompletableFuture.java:413)
+      	at com.example.client.PaymentClient.chargeAsync(PaymentClient.java:130)
+      Caused by: java.util.concurrent.TimeoutException: 
+      	at java.base/java.util.concurrent.CompletableFuture.timedGet(CompletableFuture.java:1939)
+  - name: unchecked-io
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.UncheckedIOException: java.nio.file.NoSuchFileException: /var/lib/reports/out.csv
+      	at java.base/java.nio.file.Files.newInputStream(Files.java:160)
+      	at com.example.jobs.ReportJob.load(ReportJob.java:88)
+      Caused by: java.nio.file.NoSuchFileException: /var/lib/reports/out.csv
+      	at java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:92)
+  - name: date-time
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.time.DateTimeException: Invalid value for MonthOfYear (valid values 1 - 12): 13
+      	at java.base/java.time.Month.of(Month.java:212)
+      	at com.example.billing.Period.parse(Period.java:27)
+  - name: buffer-overflow
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.nio.BufferOverflowException
+      	at java.base/java.nio.Buffer.nextPutIndex(Buffer.java:651)
+      	at com.example.codec.FrameEncoder.encode(FrameEncoder.java:54)
+  - name: buffer-underflow
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.nio.BufferUnderflowException
+      	at java.base/java.nio.Buffer.nextGetIndex(Buffer.java:634)
+      	at com.example.codec.FrameDecoder.decode(FrameDecoder.java:41)
+  - name: missing-resource
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.MissingResourceException: Can't find resource for bundle com.example.i18n.Messages, key checkout.title
+      	at java.base/java.util.ResourceBundle.getObject(ResourceBundle.java:564)
+      	at com.example.i18n.MessageSource.get(MessageSource.java:22)
+  - name: type-not-present
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.TypeNotPresentException: Type com.example.LegacyDto not present
+      	at java.base/sun.reflect.generics.factory.CoreReflectionFactory.makeNamedType(CoreReflectionFactory.java:117)
+      	at com.example.config.SchemaLoader.load(SchemaLoader.java:35)
+  - name: enum-constant
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.EnumConstantNotPresentException: com.example.Status.ARCHIVED
+      	at java.base/sun.reflect.annotation.EnumConstantNotPresentExceptionProxy.generateException(EnumConstantNotPresentExceptionProxy.java:46)
+      	at com.example.config.FeatureFlags.resolve(FeatureFlags.java:61)
+  - name: illegal-monitor
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IllegalMonitorStateException
+      	at java.base/java.lang.Object.notify(Native Method)
+      	at com.example.queue.WaitQueue.signal(WaitQueue.java:73)
+  - name: undeclared-throwable
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.reflect.UndeclaredThrowableException
+      	at java.base/jdk.internal.reflect.UndeclaredThrowableHandler.invoke(Unknown Source)
+      	at com.example.proxy.ServiceProxy.invoke(ServiceProxy.java:44)
+      Caused by: java.sql.SQLException: connection reset
+      	at com.example.db.UserRepository.findByEmail(UserRepository.java:63)
+  - name: wrong-method-type
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.invoke.WrongMethodTypeException: expected (String)void but found (Object)Object
+      	at java.base/java.lang.invoke.MethodHandle.asType(MethodHandle.java:123)
+      	at com.example.dyn.Invoker.call(Invoker.java:29)
+  - name: class-not-found
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ClassNotFoundException: com.example.LegacyClient
+      	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:641)
+      	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+      	at com.example.App.main(App.java:15)
+  - name: no-such-method
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NoSuchMethodException: com.example.api.OrderController.place(com.example.order.OrderRequest)
+      	at java.base/java.lang.Class.getMethod(Class.java:2108)
+      	at com.example.config.HandlerMapping.bind(HandlerMapping.java:48)
+  - name: no-such-field
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NoSuchFieldException: legacyId
+      	at java.base/java.lang.Class.getDeclaredField(Class.java:2417)
+      	at com.example.util.BeanMapper.copy(BeanMapper.java:33)
+  - name: illegal-access
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IllegalAccessException: class com.example.util.BeanMapper cannot access a member of class com.example.order.Order with modifiers "private"
+      	at java.base/jdk.internal.reflect.Reflection.newIllegalAccessException(Reflection.java:392)
+      	at com.example.util.BeanMapper.copy(BeanMapper.java:40)
+  - name: instantiation
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.InstantiationException: com.example.api.AbstractController
+      	at java.base/java.lang.Class.newInstance(Class.java:639)
+      	at com.example.config.BeanFactory.create(BeanFactory.java:77)
+  - name: invocation-target
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.reflect.InvocationTargetException
+      	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+      	at com.example.config.HandlerMapping.invoke(HandlerMapping.java:90)
+      Caused by: java.lang.NullPointerException
+      	at com.example.api.OrderController.place(OrderController.java:87)
+  - name: interrupted
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.InterruptedException: sleep interrupted
+      	at java.base/java.lang.Thread.sleep(Native Method)
+      	at com.example.worker.Poller.loop(Poller.java:54)
+  - name: clone-not-supported
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.CloneNotSupportedException: com.example.order.Order
+      	at java.base/java.lang.Object.clone(Native Method)
+      	at com.example.order.Order.copy(Order.java:112)
+  - name: timeout
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.concurrent.TimeoutException
+      	at java.base/java.util.concurrent.FutureTask.get(FutureTask.java:204)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:118)
+  - name: execution
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.concurrent.ExecutionException: java.lang.RuntimeException: upstream failed
+      	at java.base/java.util.concurrent.FutureTask.report(FutureTask.java:122)
+      	at com.example.worker.JobDispatcher.await(JobDispatcher.java:61)
+      Caused by: java.lang.RuntimeException: upstream failed
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:112)
+  - name: broken-barrier
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.concurrent.BrokenBarrierException
+      	at java.base/java.util.concurrent.CyclicBarrier.dowait(CyclicBarrier.java:250)
+      	at com.example.jobs.BatchSync.awaitPeers(BatchSync.java:38)
+  - name: parse-exception
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.text.ParseException: Unparseable date: "2026-13-01"
+      	at java.base/java.text.DateFormat.parse(DateFormat.java:395)
+      	at com.example.util.DateParser.parse(DateParser.java:22)
+  - name: uri-syntax
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.URISyntaxException: Illegal character in path at index 12: http://bad host/path
+      	at java.base/java.net.URI$Parser.fail(URI.java:2976)
+      	at com.example.client.UrlBuilder.build(UrlBuilder.java:19)
+  - name: sql-exception
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.sql.SQLException: Unknown column 'emial' in 'where clause'
+      	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:120)
+      	at com.example.db.UserRepository.findByEmail(UserRepository.java:63)
+      	at com.example.service.AuthService.login(AuthService.java:48)
+  - name: sql-syntax
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.sql.SQLSyntaxErrorException: Table 'shop.ordrs' doesn't exist
+      	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:120)
+      	at com.example.db.OrderRepository.list(OrderRepository.java:41)
+  - name: sql-timeout
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.sql.SQLTimeoutException: Query execution was interrupted, maximum statement execution time exceeded
+      	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:120)
+      	at com.example.db.ReportRepository.aggregate(ReportRepository.java:88)
+  - name: sql-integrity
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.sql.SQLIntegrityConstraintViolationException: Duplicate entry 'user@example.com' for key 'users.email'
+      	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:120)
+      	at com.example.db.UserRepository.insert(UserRepository.java:29)
+  - name: xa-exception
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.transaction.xa.XAException: XAER_RMERR
+      	at com.example.tx.XaResourceImpl.commit(XaResourceImpl.java:64)
+      	at com.example.tx.TransactionManager.commit(TransactionManager.java:110)
+  - name: naming
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.naming.NamingException: Cannot lookup jdbc/ShopDS
+      	at com.sun.jndi.toolkit.ctx.PartialCompositeContext.lookup(PartialCompositeContext.java:187)
+      	at com.example.config.DataSourceConfig.lookup(DataSourceConfig.java:33)
+  - name: naming-name-not-found
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.naming.NameNotFoundException: Name [jdbc/ShopDS] is not bound in this Context
+      	at org.apache.naming.NamingContext.lookup(NamingContext.java:817)
+      	at com.example.config.DataSourceConfig.lookup(DataSourceConfig.java:33)
+  - name: certificate
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.security.cert.CertificateException: No subject alternative names matching IP address 10.0.2.15 found
+      	at sun.security.util.HostnameChecker.matchIP(HostnameChecker.java:168)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:112)
+  - name: general-security
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.security.GeneralSecurityException: Invalid key
+      	at com.example.crypto.TokenSigner.sign(TokenSigner.java:47)
+      	at com.example.api.AuthController.token(AuthController.java:58)
+  - name: sax
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      org.xml.sax.SAXException: Content is not allowed in prolog.
+      	at com.sun.org.apache.xerces.internal.parsers.DOMParser.parse(DOMParser.java:257)
+      	at com.example.config.XmlConfigLoader.load(XmlConfigLoader.java:28)
+  - name: parser-config
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.parsers.ParserConfigurationException: Feature http://apache.org/xml/features/disallow-doctype-decl not supported
+      	at javax.xml.parsers.DocumentBuilderFactory.newInstance(DocumentBuilderFactory.java:120)
+      	at com.example.config.XmlConfigLoader.load(XmlConfigLoader.java:22)
+  - name: transformer
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.transform.TransformerException: javax.xml.transform.TransformerConfigurationException: Could not compile stylesheet
+      	at com.example.report.PdfRenderer.render(PdfRenderer.java:55)
+      	at com.example.jobs.InvoiceJob.run(InvoiceJob.java:40)
+  - name: xpath
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.xpath.XPathException: javax.xml.xpath.XPathExpressionException: A location step was expected
+      	at com.example.config.XmlConfigLoader.select(XmlConfigLoader.java:61)
+      	at com.example.config.FeatureFlags.load(FeatureFlags.java:30)
+  - name: script
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.script.ScriptException: ReferenceError: "legacy" is not defined in <eval> at line number 1
+      	at jdk.nashorn.api.scripting.NashornScriptEngine.eval(NashornScriptEngine.java:155)
+      	at com.example.rules.RuleEngine.eval(RuleEngine.java:44)
+  - name: data-format
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.zip.DataFormatException: invalid stored block lengths
+      	at java.base/java.util.zip.Inflater.inflateBytesBytes(Native Method)
+      	at com.example.codec.GzipDecoder.decode(GzipDecoder.java:33)
+  - name: datatype-config
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.datatype.DatatypeConfigurationException: Provider com.sun.org.apache.xerces.internal.jaxp.datatype.DatatypeFactoryImpl not found
+      	at javax.xml.datatype.FactoryFinder.newInstance(FactoryFinder.java:129)
+      	at com.example.billing.PeriodFactory.create(PeriodFactory.java:18)
+  - name: jaxb
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.bind.JAXBException: Class com.example.dto.LegacyDto nor any of its super class is known to this context
+      	at com.sun.xml.bind.v2.runtime.JAXBContextImpl.getBeanInfo(JAXBContextImpl.java:593)
+      	at com.example.client.SoapClient.unmarshal(SoapClient.java:71)
+  - name: soap
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.soap.SOAPException: Unable to create message factory for SOAP: Unable to create SAAJ meta-factory
+      	at javax.xml.soap.MessageFactory.newInstance(MessageFactory.java:145)
+      	at com.example.client.SoapClient.send(SoapClient.java:40)
+  - name: privileged-action
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.security.PrivilegedActionException: java.io.FileNotFoundException: /secret/key.pem
+      	at java.base/java.security.AccessController.doPrivileged(AccessController.java:391)
+      	at com.example.crypto.KeyLoader.load(KeyLoader.java:25)
+      Caused by: java.io.FileNotFoundException: /secret/key.pem (No such file or directory)
+      	at java.base/java.io.FileInputStream.open0(Native Method)
+  - name: backing-store
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.prefs.BackingStoreException: Couldn't get file lock.
+      	at java.prefs/java.util.prefs.FileSystemPreferences$7.run(FileSystemPreferences.java:636)
+      	at com.example.config.PrefsStore.sync(PrefsStore.java:19)
+  - name: introspection
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.beans.IntrospectionException: Method not found: getLegacyId
+      	at java.desktop/java.beans.PropertyDescriptor.<init>(PropertyDescriptor.java:300)
+      	at com.example.util.BeanMapper.introspect(BeanMapper.java:15)
+  - name: lambda-conversion
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.invoke.LambdaConversionException: Invalid receiver type
+      	at java.base/java.lang.invoke.AbstractValidatingLambdaMetafactory.validateMetafactoryArgs(AbstractValidatingLambdaMetafactory.java:233)
+      	at com.example.dyn.LambdaBinder.bind(LambdaBinder.java:28)
+  - name: io-exception
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.IOException: Broken pipe
+      	at java.base/sun.nio.ch.FileDispatcherImpl.write0(Native Method)
+      	at com.example.api.StreamController.write(StreamController.java:66)
+  - name: file-not-found
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.FileNotFoundException: /var/lib/reports/out.csv (No such file or directory)
+      	at java.base/java.io.FileInputStream.open0(Native Method)
+      	at com.example.jobs.ReportJob.load(ReportJob.java:88)
+  - name: eof
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.EOFException: Unexpected end of ZLIB input stream
+      	at java.base/java.util.zip.InflaterInputStream.fill(InflaterInputStream.java:246)
+      	at com.example.codec.GzipDecoder.decode(GzipDecoder.java:33)
+  - name: socket
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.SocketException: Connection reset
+      	at java.base/sun.nio.ch.NioSocketImpl.implRead(NioSocketImpl.java:330)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:112)
+  - name: socket-timeout
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.SocketTimeoutException: Read timed out
+      	at java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:288)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:112)
+  - name: connect-exception
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.ConnectException: Connection refused
+      	at java.base/sun.nio.ch.Net.connect0(Native Method)
+      	at com.example.client.InventoryClient.getStock(InventoryClient.java:48)
+  - name: unknown-host
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.UnknownHostException: payments.internal: Name or service not known
+      	at java.base/java.net.InetAddress$CachedAddresses.get(InetAddress.java:797)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:100)
+  - name: malformed-url
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.MalformedURLException: no protocol: bad://url
+      	at java.base/java.net.URL.<init>(URL.java:679)
+      	at com.example.client.UrlBuilder.build(UrlBuilder.java:15)
+  - name: protocol
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.ProtocolException: Server redirected too many times (20)
+      	at java.base/sun.net.www.protocol.http.HttpURLConnection.getInputStream0(HttpURLConnection.java:1928)
+      	at com.example.client.HttpFetcher.get(HttpFetcher.java:37)
+  - name: ssl
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.net.ssl.SSLException: Unsupported or unrecognized SSL message
+      	at java.base/sun.security.ssl.SSLSocketImpl.readRecord(SSLSocketImpl.java:1125)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:112)
+  - name: ssl-handshake
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.net.ssl.SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target
+      	at java.base/sun.security.ssl.Alert.createSSLException(Alert.java:131)
+      	at com.example.client.PaymentClient.charge(PaymentClient.java:112)
+  - name: unsupported-encoding
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.UnsupportedEncodingException: UTF-9
+      	at java.base/java.lang.StringCoding.lookupCharset(StringCoding.java:120)
+      	at com.example.util.CharsetUtil.decode(CharsetUtil.java:14)
+  - name: utf-data-format
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.UTFDataFormatException: malformed input around byte 12
+      	at java.base/java.io.DataInputStream.readUTF(DataInputStream.java:656)
+      	at com.example.codec.BinaryDecoder.readString(BinaryDecoder.java:29)
+  - name: zip
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.zip.ZipException: invalid CEN header (bad signature)
+      	at java.base/java.util.zip.ZipFile$Source.zerror(ZipFile.java:1760)
+      	at com.example.jobs.ImportJob.openArchive(ImportJob.java:33)
+  - name: interrupted-io
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.InterruptedIOException: interrupted while writing to socket
+      	at java.base/sun.nio.ch.NioSocketImpl.write(NioSocketImpl.java:420)
+      	at com.example.api.StreamController.write(StreamController.java:66)
+  - name: http-retry
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.net.HttpRetryException: cannot retry due to redirection, in stream
+      	at java.base/sun.net.www.protocol.http.HttpURLConnection.getInputStream0(HttpURLConnection.java:1920)
+      	at com.example.client.HttpFetcher.get(HttpFetcher.java:37)
+  - name: sync-failed
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.SyncFailedException: sync failed
+      	at java.base/java.io.FileDescriptor.sync(Native Method)
+      	at com.example.storage.DurableLog.flush(DurableLog.java:51)
+  - name: char-conversion
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.CharConversionException: Unknown encoding
+      	at com.example.util.CharsetUtil.decode(CharsetUtil.java:22)
+      	at com.example.api.UploadController.parse(UploadController.java:48)
+  - name: remote
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.rmi.RemoteException: Connection refused to host: 10.0.2.15
+      	at java.rmi/sun.rmi.transport.tcp.TCPChannel.createConnection(TCPChannel.java:300)
+      	at com.example.rmi.InventoryStub.getStock(InventoryStub.java:19)
+  - name: out-of-memory
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.OutOfMemoryError: Java heap space
+      	at java.base/java.util.Arrays.copyOf(Arrays.java:3689)
+      	at com.example.jobs.ReportJob.loadAllRows(ReportJob.java:156)
+      	at com.example.jobs.ReportJob.run(ReportJob.java:72)
+  - name: stack-overflow
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.StackOverflowError
+      	at com.example.rules.RuleEngine.eval(RuleEngine.java:88)
+      	at com.example.rules.RuleEngine.eval(RuleEngine.java:88)
+      	at com.example.rules.RuleEngine.eval(RuleEngine.java:88)
+  - name: internal-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.InternalError: a fault occurred in a recent unsafe memory access operation in compiled Java code
+      	at com.example.codec.NativeCodec.decode(Native Method)
+      	at com.example.codec.FrameDecoder.decode(FrameDecoder.java:41)
+  - name: unknown-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.UnknownError
+      	at com.example.App.main(App.java:20)
+  - name: assertion-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.AssertionError: expected non-null order
+      	at com.example.order.OrderFactory.fromCart(OrderFactory.java:31)
+      	at com.example.api.OrderController.place(OrderController.java:79)
+  - name: no-class-def
+    body: |
+      Exception in thread "main" java.lang.NoClassDefFoundError: com/example/LegacyClient
+      	at com.example.App.main(App.java:15)
+      Caused by: java.lang.ClassNotFoundException: com.example.LegacyClient
+      	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:641)
+  - name: exception-in-initializer
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ExceptionInInitializerError
+      	at com.example.config.StaticConfig.<clinit>(StaticConfig.java:18)
+      	at com.example.App.main(App.java:12)
+      Caused by: java.lang.NullPointerException
+      	at com.example.config.StaticConfig.<clinit>(StaticConfig.java:18)
+  - name: unsatisfied-link
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.UnsatisfiedLinkError: no nativecodec in java.library.path: [/usr/java/packages/lib, /usr/lib]
+      	at java.base/java.lang.ClassLoader.loadLibrary(ClassLoader.java:2447)
+      	at com.example.codec.NativeCodec.<clinit>(NativeCodec.java:12)
+  - name: verify-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.VerifyError: Bad type on operand stack
+      	at java.base/java.lang.ClassLoader.defineClass1(Native Method)
+      	at com.example.plugin.PluginLoader.load(PluginLoader.java:44)
+  - name: class-format
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ClassFormatError: Truncated class file
+      	at java.base/java.lang.ClassLoader.defineClass1(Native Method)
+      	at com.example.plugin.PluginLoader.load(PluginLoader.java:44)
+  - name: class-circularity
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.ClassCircularityError: com/example/A
+      	at java.base/java.lang.ClassLoader.defineClass1(Native Method)
+      	at com.example.plugin.PluginLoader.load(PluginLoader.java:44)
+  - name: bootstrap-method
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.BootstrapMethodError: call site initialization exception
+      	at java.base/java.lang.invoke.CallSite.makeSite(CallSite.java:347)
+      	at com.example.dyn.LambdaBinder.bind(LambdaBinder.java:28)
+      Caused by: java.lang.invoke.LambdaConversionException: Invalid receiver type
+      	at java.base/java.lang.invoke.AbstractValidatingLambdaMetafactory.validateMetafactoryArgs(AbstractValidatingLambdaMetafactory.java:233)
+  - name: incompatible-class-change
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IncompatibleClassChangeError: Found class com.example.LegacyClient, but interface was expected
+      	at com.example.service.LegacyBridge.call(LegacyBridge.java:22)
+      	at com.example.api.CompatController.run(CompatController.java:35)
+  - name: abstract-method
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.AbstractMethodError: Receiver class com.example.LegacyClient does not define or inherit an implementation of the resolved method
+      	at com.example.service.LegacyBridge.call(LegacyBridge.java:22)
+      	at com.example.api.CompatController.run(CompatController.java:35)
+  - name: no-such-field-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NoSuchFieldError: legacyId
+      	at com.example.util.BeanMapper.copy(BeanMapper.java:33)
+      	at com.example.api.UserController.show(UserController.java:33)
+  - name: no-such-method-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.NoSuchMethodError: 'com.example.order.Order.getLegacyId()Ljava/lang/String;'
+      	at com.example.api.OrderController.place(OrderController.java:90)
+      	at org.springframework.web.method.support.InvocableHandlerMethod.doInvoke(InvocableHandlerMethod.java:205)
+  - name: illegal-access-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.IllegalAccessError: tried to access method com.example.order.Order.secret() from class com.example.util.BeanMapper
+      	at com.example.util.BeanMapper.copy(BeanMapper.java:40)
+      	at com.example.api.UserController.show(UserController.java:33)
+  - name: instantiation-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.InstantiationError: com.example.api.AbstractController
+      	at com.example.config.BeanFactory.create(BeanFactory.java:77)
+      	at com.example.App.main(App.java:18)
+  - name: annotation-format
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.lang.annotation.AnnotationFormatError: Invalid default on annotation
+      	at java.base/sun.reflect.annotation.AnnotationParser.parseMemberValue(AnnotationParser.java:385)
+      	at com.example.config.FeatureFlags.resolve(FeatureFlags.java:61)
+  - name: io-error
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.io.IOError: java.nio.file.FileSystemException: /var/lib/reports: Input/output error
+      	at java.base/java.io.FileInputStream.readBytes(Native Method)
+      	at com.example.jobs.ReportJob.load(ReportJob.java:88)
+  - name: service-config
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.util.ServiceConfigurationError: com.example.spi.PaymentProvider: Provider com.example.spi.BrokenProvider could not be instantiated
+      	at java.base/java.util.ServiceLoader.fail(ServiceLoader.java:582)
+      	at com.example.client.PaymentClient.<init>(PaymentClient.java:30)
+  - name: coder-malfunction
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      java.nio.charset.CoderMalfunctionError: java.lang.NullPointerException
+      	at java.base/java.nio.charset.CharsetEncoder.encode(CharsetEncoder.java:578)
+      	at com.example.util.CharsetUtil.decode(CharsetUtil.java:22)
+  - name: factory-config
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.parsers.FactoryConfigurationError: Provider for javax.xml.parsers.DocumentBuilderFactory cannot be found
+      	at javax.xml.parsers.FactoryFinder.find(FactoryFinder.java:305)
+      	at com.example.config.XmlConfigLoader.load(XmlConfigLoader.java:22)
+  - name: transformer-factory-config
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      javax.xml.transform.TransformerFactoryConfigurationError: Provider for javax.xml.transform.TransformerFactory cannot be found
+      	at javax.xml.transform.FactoryFinder.find(FactoryFinder.java:305)
+      	at com.example.report.PdfRenderer.render(PdfRenderer.java:40)
+  - name: data-access
+    body: |
+      {timestamp} ERROR [http-nio-8080-exec-1] com.example.api.App - unhandled
+      org.springframework.dao.DataAccessException: PreparedStatementCallback; bad SQL grammar
+      	at org.springframework.jdbc.support.SQLStateSQLExceptionTranslator.doTranslate(SQLStateSQLExceptionTranslator.java:101)
+      	at com.example.db.UserRepository.findByEmail(UserRepository.java:63)
+      Caused by: java.sql.SQLSyntaxErrorException: Unknown column 'emial' in 'where clause'
+      	at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:120)
