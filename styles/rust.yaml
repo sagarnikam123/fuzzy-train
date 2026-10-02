@@ -1,0 +1,103 @@
+# Language style fixtures for --style rust
+# {timestamp} is replaced at emit time (see timestamp_format).
+language: rust
+description: Rust panic and backtrace output for multiline parser testing
+timestamp_format: "%Y-%m-%dT%H:%M:%S.%3fZ"
+
+info_messages:
+  - '{timestamp} INFO api: GET /health -> 200'
+  - '{timestamp} INFO worker: job=resize status=ok'
+  - '{timestamp} DEBUG db: pool checkout ok'
+  - '{timestamp} WARN cache: soft timeout key=session:***'
+
+errors:
+  - name: unwrap-none
+    body: |
+      thread 'tokio-runtime-worker' panicked at src/order/service.rs:87:14:
+      called `Option::unwrap()` on a `None` value
+      stack backtrace:
+         0: rust_begin_unwind
+                   at /rustc/9b00956e5603143020/library/std/src/panicking.rs:645:5
+         1: core::panicking::panic_fmt
+                   at /rustc/9b00956e5603143020/library/core/src/panicking.rs:72:14
+         2: core::panicking::panic
+                   at /rustc/9b00956e5603143020/library/core/src/panicking.rs:146:5
+         3: shop::order::service::Service::place
+                   at /app/src/order/service.rs:87:14
+         4: shop::api::create_order
+                   at /app/src/api/orders.rs:54:18
+         5: tokio::runtime::task::core::Core::poll
+                   at /usr/local/cargo/registry/src/index.crates.io/tokio-1.37.0/src/runtime/task/core.rs:328:17
+         6: tokio::runtime::scheduler::multi_thread::worker::Context::run_task
+                   at /usr/local/cargo/registry/src/index.crates.io/tokio-1.37.0/src/runtime/scheduler/multi_thread/worker.rs:576:12
+      note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+  - name: index-out-of-bounds
+    body: |
+      thread 'main' panicked at src/cart.rs:41:9:
+      index out of bounds: the len is 0 but the index is 0
+      stack backtrace:
+         0: std::panicking::begin_panic
+                   at /rustc/9b00956e5603143020/library/std/src/panicking.rs:675:5
+         1: shop::cart::Cart::require_items
+                   at /app/src/cart.rs:41:9
+         2: shop::order::factory::from_cart
+                   at /app/src/order/factory.rs:28:5
+         3: shop::main
+                   at /app/src/main.rs:63:5
+
+  - name: unwrap-err
+    body: |
+      thread 'tokio-runtime-worker' panicked at src/db/user.rs:63:18:
+      called `Result::unwrap()` on an `Err` value: Database(PgDatabaseError { severity: Error, code: "42703", message: "column \"emial\" does not exist", detail: None, hint: None })
+      stack backtrace:
+         0: rust_begin_unwind
+                   at /rustc/9b00956e5603143020/library/std/src/panicking.rs:645:5
+         1: core::result::unwrap_failed
+                   at /rustc/9b00956e5603143020/library/core/src/result.rs:1654:5
+         2: shop::db::user::Repo::find_by_email
+                   at /app/src/db/user.rs:63:18
+         3: shop::auth::Service::login
+                   at /app/src/auth/service.rs:48:22
+         4: shop::api::login
+                   at /app/src/api/auth.rs:31:18
+
+  - name: assertion-failed
+    body: |
+      thread 'main' panicked at src/billing.rs:118:5:
+      assertion `left == right` failed
+        left: 0
+       right: 1
+      stack backtrace:
+         0: std::panicking::begin_panic
+                   at /rustc/9b00956e5603143020/library/std/src/panicking.rs:675:5
+         1: shop::billing::average_order_value
+                   at /app/src/billing.rs:118:5
+         2: shop::main
+                   at /app/src/main.rs:90:5
+
+  - name: mutex-poisoned
+    body: |
+      thread 'tokio-runtime-worker' panicked at src/cache/store.rs:44:28:
+      called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+      stack backtrace:
+         0: rust_begin_unwind
+                   at /rustc/9b00956e5603143020/library/std/src/panicking.rs:645:5
+         1: core::result::unwrap_failed
+                   at /rustc/9b00956e5603143020/library/core/src/result.rs:1654:5
+         2: shop::cache::store::Store::set
+                   at /app/src/cache/store.rs:44:28
+         3: shop::api::warm
+                   at /app/src/api/warm.rs:22:9
+
+  - name: overflow
+    body: |
+      thread 'main' panicked at src/cart.rs:55:17:
+      attempt to add with overflow
+      stack backtrace:
+         0: core::panicking::panic_fmt
+                   at /rustc/9b00956e5603143020/library/core/src/panicking.rs:72:14
+         1: shop::cart::Cart::add_quantity
+                   at /app/src/cart.rs:55:17
+         2: shop::api::update_cart
+                   at /app/src/api/cart.rs:41:5
