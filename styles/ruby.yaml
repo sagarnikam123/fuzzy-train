@@ -1,0 +1,84 @@
+# Language style fixtures for --style ruby
+# {timestamp} is replaced at emit time (see timestamp_format).
+language: ruby
+description: Ruby / Rails exception backtraces for multiline parser testing
+timestamp_format: "%Y-%m-%dT%H:%M:%S.%6f"
+
+info_messages:
+  - 'I, [{timestamp} #12]  INFO -- : [abc123] Started GET "/health" for 10.0.1.10'
+  - 'I, [{timestamp} #12]  INFO -- : [abc123] Completed 200 OK in 3ms'
+  - 'D, [{timestamp} #12] DEBUG -- : Cart c-1042 items=3'
+  - 'W, [{timestamp} #12]  WARN -- : Rate limit soft threshold for api_key=ak_***'
+
+errors:
+  - name: no-method-error
+    body: |
+      E, [{timestamp} #12] ERROR -- : [abc123] Failed to place order
+      NoMethodError (undefined method `id' for nil:NilClass):
+
+      app/controllers/orders_controller.rb:87:in `create'
+      app/controllers/orders_controller.rb:79:in `create'
+      app/services/order_factory.rb:28:in `from_cart'
+      app/services/cart_service.rb:41:in `require_items!'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
+      actionpack (7.1.3) lib/abstract_controller/base.rb:224:in `process_action'
+      actionpack (7.1.3) lib/action_controller/metal/rendering.rb:165:in `process_action'
+      ...
+      app/middleware/request_id.rb:12:in `call'
+
+  - name: activerecord-not-found
+    body: |
+      ActiveRecord::RecordNotFound (Couldn't find User with 'id'=0):
+
+      app/controllers/users_controller.rb:15:in `show'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
+      actionpack (7.1.3) lib/abstract_controller/base.rb:224:in `process_action'
+      actionpack (7.1.3) lib/action_controller/metal/rendering.rb:165:in `process_action'
+      activesupport (7.1.3) lib/active_support/callbacks.rb:118:in `block in run_callbacks'
+
+  - name: name-error
+    body: |
+      E, [{timestamp} #12] ERROR -- : [abc123] undefined constant
+      NameError (uninitialized constant Payments::LegacyClient):
+
+      app/services/payment_service.rb:22:in `charge'
+      app/controllers/checkout_controller.rb:64:in `pay'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
+      actionpack (7.1.3) lib/abstract_controller/base.rb:224:in `process_action'
+
+  - name: argument-error
+    body: |
+      E, [{timestamp} #12] ERROR -- : [abc123] bad arguments
+      ArgumentError (wrong number of arguments (given 0, expected 1)):
+
+      app/services/user_service.rb:41:in `create'
+      app/controllers/users_controller.rb:28:in `create'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
+
+  - name: record-invalid
+    body: |
+      E, [{timestamp} #12] ERROR -- : [abc123] validation failed
+      ActiveRecord::RecordInvalid (Validation failed: Email can't be blank, Email is invalid):
+
+      app/models/user.rb:12:in `save!'
+      app/services/user_service.rb:44:in `create'
+      app/controllers/users_controller.rb:28:in `create'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
+
+  - name: connection-refused
+    body: |
+      E, [{timestamp} #12] ERROR -- : [abc123] payment upstream unreachable
+      Errno::ECONNREFUSED (Connection refused - connect(2) for "payments.internal" port 443):
+
+      app/clients/payment_client.rb:112:in `charge'
+      app/controllers/checkout_controller.rb:64:in `pay'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
+
+  - name: timeout
+    body: |
+      E, [{timestamp} #12] ERROR -- : [abc123] upstream timed out
+      Net::ReadTimeout (Net::ReadTimeout with #<TCPSocket:(closed)>):
+
+      app/clients/inventory_client.rb:48:in `get_stock'
+      app/controllers/catalog_controller.rb:29:in `show'
+      actionpack (7.1.3) lib/action_controller/metal/basic_implicit_render.rb:6:in `send_action'
