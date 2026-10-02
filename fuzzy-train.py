@@ -14,6 +14,11 @@ file splitting/rotation, and fake-time timestamp stepping.
 HTTP access simulation (all opt-in; default JSON/logfmt/Apache behavior is
 unchanged): --failure-rate, --get-post-ratio, --get-duration-ms,
 --post-duration-ms, --arrival exponential, and --log-format http.
+
+Language styles (opt-in): --style java|python loads real multiline stack
+traces from styles/*.yaml for Fluent Bit / Vector multiline parser testing.
+Pair with --log-format plain and --error-every / --error-interval /
+--failure-rate to control how often full error blocks are emitted.
 """
 
 import argparse
@@ -29,7 +34,8 @@ import gzip
 import re
 import itertools
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
 
 # Optional faker enrichment: when installed, logs use broad realistic data;
 # when absent, the script falls back to the built-in zero-dependency generator
@@ -44,6 +50,13 @@ try:
 except ImportError:
     fake = None
     FAKER_AVAILABLE = False
+
+try:
+    import yaml  # PyYAML — required only for --style
+    YAML_AVAILABLE = True
+except ImportError:
+    yaml = None
+    YAML_AVAILABLE = False
 
 # Log levels and example sentences
 LOG_LEVELS = ["INFO", "ERROR", "DEBUG", "WARN"]
@@ -73,7 +86,7 @@ SENTENCES = [
 ]
 
 # Constants
-__version__ = "2.4.0"
+__version__ = "2.5.0"
 DETAIL_PROBABILITY = 0.3
 # Trace ID sequence (itertools.count avoids a mutable module global + `global` stmt)
 TRACE_ID_SEQ = itertools.count(1)
@@ -123,6 +136,34 @@ DEFAULT_HTTP_GET_POST_RATIO = 0.9
 DEFAULT_GET_DURATION_MS = 500
 DEFAULT_POST_DURATION_MS = 2000
 DEFAULT_ARRIVAL = "fixed"  # fixed | exponential
+
+# Language style defaults (opt-in). None = legacy generator unchanged.
+DEFAULT_STYLE = None
+DEFAULT_ERROR_EVERY = 0       # 0 = off
+DEFAULT_ERROR_INTERVAL = None  # None = off
+STYLES_DIR = Path(__file__).resolve().parent / "styles"
+# Friendly aliases -> styles/<name>.yaml stem
+STYLE_ALIASES = {
+    "node": "javascript",
+    "nodejs": "javascript",
+    "js": "javascript",
+    "c#": "csharp",
+    "cs": "csharp",
+    "dotnet": "csharp",
+    ".net": "csharp",
+}
+
+# Default {timestamp} formats per language (%3f = milliseconds).
+# Override in YAML with timestamp_format: "..."
+STYLE_TIMESTAMP_FORMATS = {
+    "java": "%Y-%m-%d %H:%M:%S,%3f",
+    "python": "%Y-%m-%d %H:%M:%S,%3f",
+    "go": "%Y-%m-%dT%H:%M:%SZ",
+    "rust": "%Y-%m-%dT%H:%M:%S.%3fZ",
+    "csharp": "%Y-%m-%d %H:%M:%S.%3f +00:00",
+    "ruby": "%Y-%m-%dT%H:%M:%S.%6f",
+    "javascript": "%Y-%m-%dT%H:%M:%S.%3fZ",
+}
 
 def get_process_id() -> str:
     """Get process identifier based on environment (PID for local, container ID for containers).
@@ -277,6 +318,203 @@ def choose_http_url() -> str:
     return "/"
 
 
+
+def load_style(name: str) -> Dict[str, Any]:
+    """Load a language style YAML from styles/<name>.yaml.
+
+    Supports inline error bodies and optional `file:` references relative to
+    the styles directory (or absolute paths).
+    """
+    if not YAML_AVAILABLE:
+        print("Error: --style requires PyYAML. Install with: pip install pyyaml")
+        raise SystemExit(1)
+
+    style_name = name.strip().lower()
+    style_name = STYLE_ALIASES.get(style_name, style_name)
+    path = STYLES_DIR / f"{style_name}.yaml"
+    if not path.is_file():
+        path = STYLES_DIR / f"{style_name}.yml"
+    if not path.is_file():
+        available = sorted({
+            p.stem for p in (
+                list(STYLES_DIR.glob("*.yaml")) + list(STYLES_DIR.glob("*.yml"))
+            )
+        }) if STYLES_DIR.is_dir() else []
+        print(f"Error: style '{style_name}' not found under {STYLES_DIR}")
+        if available:
+            print(f"Available styles: {', '.join(available)}")
+        raise SystemExit(1)
+
+    with path.open("r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+
+    info = list(data.get("info_messages") or [])
+    errors_raw = list(data.get("errors") or [])
+    if not info and not errors_raw:
+        print(f"Error: style '{style_name}' has no info_messages or errors")
+        raise SystemExit(1)
+
+    errors: List[Dict[str, str]] = []
+    for err in errors_raw:
+        if not isinstance(err, dict):
+            continue
+        body = err.get("body")
+        rel = err.get("file")
+        if body is None and rel:
+            fpath = Path(rel)
+            if not fpath.is_absolute():
+                fpath = STYLES_DIR / fpath
+            if not fpath.is_file():
+                print(f"Error: style '{style_name}' error file not found: {fpath}")
+                raise SystemExit(1)
+            body = fpath.read_text(encoding="utf-8")
+        if body is None:
+            continue
+        body = str(body).rstrip("\n")
+        errors.append({"name": str(err.get("name") or "error"), "body": body})
+
+    if errors_raw and not errors:
+        print(f"Error: style '{style_name}' errors[] entries missing body/file")
+        raise SystemExit(1)
+
+    language = data.get("language") or style_name
+    ts_fmt = data.get("timestamp_format") or STYLE_TIMESTAMP_FORMATS.get(
+        str(language).lower(), "%Y-%m-%dT%H:%M:%S.%3fZ"
+    )
+    return {
+        "language": language,
+        "description": data.get("description") or "",
+        "info_messages": info,
+        "errors": errors,
+        "timestamp_format": ts_fmt,
+        "path": str(path),
+    }
+
+
+def format_style_timestamp(now: datetime, fmt: str) -> str:
+    """Format `now` using a style timestamp_format.
+
+    Supports printf-like extras beyond strftime:
+      %3f  -> milliseconds (000-999)
+      %6f  -> microseconds (000000-999999)
+    """
+    ms = f"{int(now.microsecond / 1000):03d}"
+    us = f"{now.microsecond:06d}"
+    # Substitute custom tokens before strftime (so %f is not double-expanded).
+    prepared = fmt.replace("%3f", ms).replace("%6f", us)
+    # Ensure timezone-aware UTC display for %z / Zulu styles.
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.strftime(prepared)
+
+
+def style_template_vars(now: datetime, style: Dict[str, Any]) -> Dict[str, str]:
+    """Placeholders available inside info_messages / error bodies."""
+    fmt = style.get("timestamp_format") or STYLE_TIMESTAMP_FORMATS.get(
+        str(style.get("language", "")).lower(), "%Y-%m-%dT%H:%M:%S.%3fZ"
+    )
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    ts = format_style_timestamp(now, fmt)
+    # ISO: Z for UTC, numeric offset otherwise (respects --time-zone via caller).
+    if now.utcoffset() == timezone.utc.utcoffset(now):
+        iso = now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    else:
+        off = now.strftime("%z")
+        iso = now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + (
+            f"{off[:3]}:{off[3:]}" if off else ""
+        )
+    return {
+        "timestamp": ts,
+        "ts": ts,
+        "iso": iso,
+        "date": now.strftime("%Y-%m-%d"),
+        "time": now.strftime("%H:%M:%S"),
+        "epoch": str(int(now.timestamp())),
+        "epoch_ms": str(int(now.timestamp() * 1000)),
+    }
+
+
+_STYLE_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def render_style_text(template: str, now: datetime, style: Dict[str, Any]) -> str:
+    """Substitute {timestamp} / {iso} / … in a style template string.
+
+    Only replaces `{identifier}` tokens. Literal braces in stack fixtures
+    (Rust `PoisonError { .. }`, JS object dumps, etc.) are left untouched —
+    unlike str.format_map, which treats them as format fields and crashes.
+    """
+    vars_ = style_template_vars(now, style)
+
+    def _repl(match: re.Match) -> str:
+        key = match.group(1)
+        return vars_[key] if key in vars_ else match.group(0)
+
+    return _STYLE_PLACEHOLDER_RE.sub(_repl, str(template))
+
+
+
+def resolve_style_clock(base: Optional[datetime], time_zone: str) -> datetime:
+    """Wall/synthetic clock for style placeholders, honoring --time-zone."""
+    now = base if base is not None else datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    if time_zone.lower() == "local":
+        return now.astimezone()
+    return now.astimezone(timezone.utc)
+
+
+def choose_style_info(style: Dict[str, Any], now: datetime) -> str:
+    """Pick a one-line info message from the style (fallback if list empty)."""
+    msgs = style.get("info_messages") or []
+    if not msgs:
+        return f"{style.get('language', 'app')}: ok"
+    return render_style_text(str(random.choice(msgs)), now, style)
+
+
+def choose_style_error(style: Dict[str, Any], now: datetime) -> str:
+    """Pick a multiline error body from the style."""
+    errors = style.get("errors") or []
+    if not errors:
+        return f"{style.get('language', 'app')}: error"
+    return render_style_text(random.choice(errors)["body"], now, style)
+
+
+def should_emit_style_error(
+    lines_written: int,
+    failure_rate: Optional[float],
+    error_every: int,
+    error_interval: Optional[float],
+    last_error_at: Optional[datetime],
+    now: datetime,
+) -> Tuple[bool, Optional[datetime]]:
+    """Decide whether this event is a full style error block.
+
+    Precedence: --error-every, then --error-interval, then --failure-rate.
+    --error-interval emits on the first event (last_error_at is None), then
+    every DURATION thereafter — intentional for quick multiline smoke tests.
+    Returns (is_error, updated_last_error_at).
+    """
+    if error_every and error_every > 0:
+        return ((lines_written + 1) % error_every == 0), last_error_at
+
+    if error_interval is not None and error_interval > 0:
+        if last_error_at is None or (now - last_error_at).total_seconds() >= error_interval:
+            return True, now
+        return False, last_error_at
+
+    if failure_rate is not None:
+        return (random.random() < failure_rate), last_error_at
+
+    return False, last_error_at
+
+
+def format_plain_log(entry: Dict[str, Any]) -> str:
+    """Emit message as-is (may contain embedded newlines for multiline stacks)."""
+    return str(entry.get("message", ""))
+
+
 def parse_entry_timestamp(entry: Dict[str, Any]) -> datetime:
     """Parse an entry's timestamp into a datetime for reformatting.
 
@@ -288,27 +526,41 @@ def parse_entry_timestamp(entry: Dict[str, Any]) -> datetime:
         entry: Log entry dict; may contain a 'timestamp' string
 
     Returns:
-        datetime: Parsed timestamp (naive), or current time if absent/unparseable
+        datetime: Parsed timestamp (tz-aware when the source includes an offset/Z)
     """
     ts = entry.get('timestamp')
     if not ts:
-        return datetime.now()
+        return datetime.now(timezone.utc)
     try:
         # Normalize a trailing 'Z' (UTC) which older fromisoformat rejects.
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except ValueError:
         try:
-            return datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
+            return datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
         except ValueError:
-            return datetime.now()
+            return datetime.now(timezone.utc)
 
 def format_json_log(entry: Dict[str, Any]) -> str:
     """Format log entry as JSON."""
     return json.dumps(entry)
 
 def format_logfmt_log(entry: Dict[str, Any]) -> str:
-    """Format log entry as logfmt."""
-    return ' '.join(f'{k}="{str(v).replace("\"", "\\\"")}"' for k, v in entry.items())
+    """Format log entry as logfmt.
+
+    Escapes backslashes, quotes, and newlines so multiline --style stacks stay
+    on one logical logfmt record.
+    """
+    parts = []
+    for k, v in entry.items():
+        s = (
+            str(v)
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
+        parts.append(f'{k}="{s}"')
+    return " ".join(parts)
 
 def format_apache_common_log(entry: Dict[str, Any]) -> str:
     """Format log entry as Apache Common Log Format."""
@@ -316,7 +568,11 @@ def format_apache_common_log(entry: Dict[str, Any]) -> str:
     ident = "-"
     user = "-"
     dt = parse_entry_timestamp(entry)
-    tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
+    if dt.tzinfo is None:
+        tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
+    else:
+        off = dt.strftime("%z") or "+0000"
+        tstr = dt.strftime(f"[%d/%b/%Y:%H:%M:%S {off}]")
     method = entry.get("method")
     if method is None:
         method = fake.http_method() if FAKER_AVAILABLE else "GET"
@@ -334,7 +590,11 @@ def format_apache_combined_log(entry: Dict[str, Any]) -> str:
     ident = "-"
     user = "-"
     dt = parse_entry_timestamp(entry)
-    tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
+    if dt.tzinfo is None:
+        tstr = dt.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
+    else:
+        off = dt.strftime("%z") or "+0000"
+        tstr = dt.strftime(f"[%d/%b/%Y:%H:%M:%S {off}]")
     method = entry.get("method")
     if method is None:
         method = fake.http_method() if FAKER_AVAILABLE else "GET"
@@ -415,6 +675,8 @@ def format_log(entry: Dict[str, Any], log_format: str) -> str:
         return format_json_log(entry)
     elif format_lower == "logfmt":
         return format_logfmt_log(entry)
+    elif format_lower == "plain":
+        return format_plain_log(entry)
     elif format_lower == "http":
         return format_http_log(entry)
     elif format_lower == "apache common":
@@ -522,12 +784,15 @@ class OutputHandler:
             self.close()
             self.part += 1
             self._open()
-        self.fh.write(line + "\n")
+        # Mirror stdout: do not append an extra NL when the payload already ends
+        # with one (multiline --style stacks).
+        payload = line if line.endswith("\n") else line + "\n"
+        self.fh.write(payload)
         self.lines_in_part += 1
         # ponytail: byte-based split counts uncompressed UTF-8 payload, not the
         # on-disk compressed size (unknown until flush). For .gz output the
         # physical part files will be smaller than the --split-by threshold.
-        self.bytes_in_part += len(line.encode("utf-8")) + 1
+        self.bytes_in_part += len(payload.encode("utf-8"))
 
     def close(self) -> None:
         """Close the current file handle if open (safe to call more than once)."""
@@ -535,7 +800,7 @@ class OutputHandler:
             self.fh.close()
             self.fh = None
 
-def parse_duration(value: str) -> float:
+def parse_duration(value: str, flag: str = "--time-step") -> float:
     """Parse a duration string into seconds (flog-style).
 
     Accepts a plain number (seconds) or a suffixed value: ms, s, m, h.
@@ -543,6 +808,7 @@ def parse_duration(value: str) -> float:
 
     Args:
         value: Duration string, e.g. '10', '20ms', '5s', '1m'
+        flag: CLI flag name used in the error message (e.g. --error-interval)
 
     Returns:
         float: Duration in seconds
@@ -552,7 +818,7 @@ def parse_duration(value: str) -> float:
     """
     m = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*(ms|s|m|h)?\s*", value)
     if not m:
-        print(f"Error: invalid --time-step duration '{value}' (use e.g. 10, 20ms, 5s, 1m)")
+        print(f"Error: invalid {flag} duration '{value}' (use e.g. 10, 20ms, 5s, 1m)")
         raise SystemExit(1)
     num = float(m.group(1))
     unit = m.group(2) or "s"
@@ -587,6 +853,11 @@ Examples:
     python3 fuzzy-train.py -f http --get-post-ratio 0.9 --get-duration-ms 500 --post-duration-ms 2000
     python3 fuzzy-train.py --arrival exponential --lines-per-second 2
 
+  Language styles / multiline stacks (Fluent Bit & Vector multiline testing):
+    python3 fuzzy-train.py --style java -f plain --error-every 1000
+    python3 fuzzy-train.py --style python -f plain --error-interval 5m --lines-per-second 2
+    python3 fuzzy-train.py --style java -f plain --failure-rate 0.05 -n 50
+
   Field control:
     python3 fuzzy-train.py --min-log-length 200 --max-log-length 300   # Custom message lengths
     python3 fuzzy-train.py --no-timestamp --no-trace-id                # Minimal logs (message only)
@@ -610,7 +881,7 @@ Examples:
     # Basic Options
     basic = parser.add_argument_group('Basic Options')
     basic.add_argument("-f", "--log-format", type=str, default=DEFAULT_LOG_FORMAT, metavar="FORMAT",
-                       help=f"Output format: JSON, logfmt, http, 'apache common', 'apache combined', 'apache error', 'bsd syslog', syslog (default: {DEFAULT_LOG_FORMAT})")
+                       help=f"Output format: JSON, logfmt, plain, http, 'apache common', 'apache combined', 'apache error', 'bsd syslog', syslog (default: {DEFAULT_LOG_FORMAT})")
     basic.add_argument("--lines-per-second", type=float, default=DEFAULT_LINES_PER_SECOND, metavar="RATE",
                        help=f"Generation rate (default: {DEFAULT_LINES_PER_SECOND})")
     basic.add_argument("--arrival", type=str, default=DEFAULT_ARRIVAL, metavar="MODE",
@@ -638,6 +909,12 @@ Examples:
                          help=f"Mean GET duration in ms for http format (default: {DEFAULT_GET_DURATION_MS})")
     content.add_argument("--post-duration-ms", type=float, default=DEFAULT_POST_DURATION_MS, metavar="MS",
                          help=f"Mean POST duration in ms for http format (default: {DEFAULT_POST_DURATION_MS})")
+    content.add_argument("--style", type=str, default=DEFAULT_STYLE, metavar="NAME",
+                         help="Language style from styles/<NAME>.yaml (java, python, go, rust, csharp, ruby, javascript; aliases: node, c#). Defaults -f plain")
+    content.add_argument("--error-every", type=int, default=DEFAULT_ERROR_EVERY, metavar="N",
+                         help="With --style: emit a full multiline error every N events (0 = off)")
+    content.add_argument("--error-interval", type=str, default=DEFAULT_ERROR_INTERVAL, metavar="DURATION",
+                         help="With --style: emit a full multiline error every DURATION (e.g. 5m, 30s)")
 
     # Field Control
     fields = parser.add_argument_group('Field Control (use --no-* to exclude fields)')
@@ -647,16 +924,16 @@ Examples:
                         choices=["pid", "integer"],
                         help=f"Trace ID type: pid (PID/Container) or integer (incremental) (default: {DEFAULT_TRACE_ID_TYPE})")
     fields.add_argument("--no-timestamp", action="store_true",
-                        help="Exclude timestamp field")
+                        help="Exclude timestamp field from JSON/logfmt (plain --style still embeds {timestamp} from the YAML template)")
     fields.add_argument("--no-log-level", action="store_true",
-                        help="Exclude log level field")
+                        help="Exclude level field from JSON/logfmt (plain --style still embeds level text from the YAML template)")
     fields.add_argument("--no-length", action="store_true",
                         help="Exclude message length field")
 
     # Output Control (flog-inspired; all opt-in, streaming stays the default)
     outctl = parser.add_argument_group('Output Control')
     outctl.add_argument("-n", "--count", type=int, default=DEFAULT_COUNT, metavar="N",
-                        help="Generate exactly N lines then exit (default: 0 = infinite streaming)")
+                        help="Generate exactly N events then exit (default: 0 = infinite). With --style, one event may be a multiline stack (not N physical lines)")
     outctl.add_argument("-b", "--max-bytes", type=int, default=DEFAULT_MAX_BYTES, metavar="N",
                         help="Generate until >= N bytes then exit (ignored when --count is set)")
     outctl.add_argument("-w", "--overwrite", action="store_true",
@@ -771,6 +1048,9 @@ def main() -> None:
     get_duration_ms = get_arg_value(args, 'get-duration-ms')
     post_duration_ms = get_arg_value(args, 'post-duration-ms')
     arrival = (get_arg_value(args, 'arrival') or DEFAULT_ARRIVAL).lower()
+    style_name = get_arg_value(args, 'style')
+    error_every = get_arg_value(args, 'error-every') or 0
+    error_interval_raw = get_arg_value(args, 'error-interval')
 
     # Output-control parameters (argparse supplies defaults, so values are never None)
     count = get_arg_value(args, 'count')
@@ -800,13 +1080,38 @@ def main() -> None:
     if get_duration_ms <= 0 or post_duration_ms <= 0:
         print("Error: --get-duration-ms and --post-duration-ms must be greater than 0")
         raise SystemExit(1)
+    if error_every < 0:
+        print("Error: --error-every cannot be negative")
+        raise SystemExit(1)
+
+    style = None
+    if style_name:
+        style = load_style(str(style_name))
+        fmt_l = log_format.lower()
+        if fmt_l in ("http", "apache common", "apache combined"):
+            print("Error: --style is incompatible with --log-format "
+                  f"'{log_format}' (access formats ignore the message field). "
+                  "Use plain, json, or logfmt.",
+                  file=sys.stderr)
+            raise SystemExit(1)
+        # Multiline stacks need plain emit; auto-select when user left the JSON default.
+        if log_format == DEFAULT_LOG_FORMAT:
+            log_format = "plain"
+            print("Note: --style defaults to --log-format plain for multiline stacks "
+                  "(override with -f json if you want stacks inside a JSON message field)",
+                  file=sys.stderr)
+        if not style.get("errors") and (error_every > 0 or error_interval_raw or failure_rate):
+            print(f"Error: style '{style_name}' has no errors[] fixtures", file=sys.stderr)
+            raise SystemExit(1)
+
+    error_interval = parse_duration(error_interval_raw, "--error-interval") if error_interval_raw else None
 
     # --count takes precedence over --max-bytes (flog parity)
     if count > 0:
         max_bytes = 0
 
     # Parse fake-time step (seconds); None = real wall-clock
-    time_step = parse_duration(time_step_raw) if time_step_raw is not None else None
+    time_step = parse_duration(time_step_raw, "--time-step") if time_step_raw is not None else None
 
     # split-by unit follows the active bound: bytes when byte-bounded, else lines
     split_unit = "bytes" if (max_bytes > 0 and count == 0) else "lines"
@@ -842,6 +1147,7 @@ def main() -> None:
 
     lines_written = 0
     bytes_written = 0
+    last_style_error_at = None  # for --error-interval with --style
     try:
         while True:
             # Stop conditions (bounded batch mode); count beats bytes
@@ -850,51 +1156,72 @@ def main() -> None:
             if max_bytes > 0 and bytes_written >= max_bytes:
                 break
 
-            # One roll drives level + status when a failure rate applies.
-            failed = None if effective_failure_rate is None else (
-                random.random() < effective_failure_rate
-            )
-            log_level = choose_log_level(effective_failure_rate, failed)
-            trace_id = generate_trace_id(include_trace_id, trace_id_type)
-            message_length = random.randint(min_len, max_len)
-            message = generate_random_message(message_length)
             timestamp = generate_timestamp(tz, base=synthetic_time)
+            clock_now = resolve_style_clock(synthetic_time, tz)
 
-            # Build log entry with optimal field ordering for UX
-            log_entry = build_log_entry(
-                timestamp, log_level, message, trace_id,
-                include_timestamp, include_log_level, include_length
-            )
-
-            # Opt-in HTTP fields: only for --log-format http, or when apache
-            # knobs are explicitly set (legacy apache random mix otherwise).
-            if is_http:
-                # Access-line shape always needs timestamp + level so status/level
-                # stay synced; --no-timestamp / --no-log-level only trim JSON/logfmt.
-                log_entry["timestamp"] = timestamp
-                log_entry["level"] = log_level
-                method = choose_http_method(get_post_ratio)
-                log_entry["method"] = method
-                log_entry["url"] = choose_http_url()
-                log_entry["status"] = choose_http_status(effective_failure_rate, failed)
-                log_entry["duration_ms"] = choose_duration_ms(
-                    method, get_duration_ms, post_duration_ms
+            if style is not None:
+                is_err, last_style_error_at = should_emit_style_error(
+                    lines_written, failure_rate, error_every, error_interval,
+                    last_style_error_at, clock_now,
                 )
-            elif is_apache_access:
-                # Apache lines have no level field; --failure-rate only drives status.
-                if failure_rate is not None:
-                    log_entry["status"] = choose_http_status(failure_rate, failed)
-                if get_post_ratio is not None:
-                    log_entry["method"] = choose_http_method(get_post_ratio)
+                if is_err:
+                    message = choose_style_error(style, clock_now)
+                    log_level = "ERROR"
+                else:
+                    message = choose_style_info(style, clock_now)
+                    log_level = "INFO"
+                trace_id = generate_trace_id(include_trace_id, trace_id_type)
+                log_entry = build_log_entry(
+                    timestamp, log_level, message, trace_id,
+                    include_timestamp, include_log_level, include_length
+                )
+            else:
+                # One roll drives level + status when a failure rate applies.
+                failed = None if effective_failure_rate is None else (
+                    random.random() < effective_failure_rate
+                )
+                log_level = choose_log_level(effective_failure_rate, failed)
+                trace_id = generate_trace_id(include_trace_id, trace_id_type)
+                message_length = random.randint(min_len, max_len)
+                message = generate_random_message(message_length)
+                log_entry = build_log_entry(
+                    timestamp, log_level, message, trace_id,
+                    include_timestamp, include_log_level, include_length
+                )
+
+                # Opt-in HTTP fields: only for --log-format http, or when apache
+                # knobs are explicitly set (legacy apache random mix otherwise).
+                if is_http:
+                    # Access-line shape always needs timestamp + level so status/level
+                    # stay synced; --no-timestamp / --no-log-level only trim JSON/logfmt.
+                    log_entry["timestamp"] = timestamp
+                    log_entry["level"] = log_level
+                    method = choose_http_method(get_post_ratio)
+                    log_entry["method"] = method
+                    log_entry["url"] = choose_http_url()
+                    log_entry["status"] = choose_http_status(effective_failure_rate, failed)
+                    log_entry["duration_ms"] = choose_duration_ms(
+                        method, get_duration_ms, post_duration_ms
+                    )
+                elif is_apache_access:
+                    # Apache lines have no level field; --failure-rate only drives status.
+                    if failure_rate is not None:
+                        log_entry["status"] = choose_http_status(failure_rate, failed)
+                    if get_post_ratio is not None:
+                        log_entry["method"] = choose_http_method(get_post_ratio)
 
             line = format_log(log_entry, log_format)
             if to_stdout:
-                print(line, flush=True)  # flush for real-time tailing in pipes/containers
+                if line.endswith("\n"):
+                    print(line, end="", flush=True)
+                else:
+                    print(line, flush=True)  # flush for real-time tailing in pipes/containers
             if handler:
                 handler.write(line)
 
             lines_written += 1
-            bytes_written += len(line.encode("utf-8")) + 1
+            payload_for_bytes = line if line.endswith("\n") else line + "\n"
+            bytes_written += len(payload_for_bytes.encode("utf-8"))
             if synthetic_time is not None:
                 synthetic_time += timedelta(seconds=time_step)
 
