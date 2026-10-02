@@ -2,9 +2,15 @@
 
 # fuzzy-train
 
-[![Docker Hub](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train)](https://hub.docker.com/repository/docker/sagarnikam123/fuzzy-train)
-[![GitHub](https://img.shields.io/github/stars/sagarnikam123/fuzzy-train?style=social)](https://github.com/sagarnikam123/fuzzy-train)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python: 3.8+](https://img.shields.io/badge/python-3.8+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Tested with: pytest](https://img.shields.io/badge/tested%20with-pytest-0A9EDC.svg?logo=pytest&logoColor=white)](https://docs.pytest.org/)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![Docker Pulls](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train.svg?logo=docker&logoColor=white)](https://hub.docker.com/r/sagarnikam123/fuzzy-train)
+[![Deploy: Kubernetes](https://img.shields.io/badge/deploy-Kubernetes-326CE5.svg?logo=kubernetes&logoColor=white)](k8s/)
+[![Integration: SkyWalking](https://img.shields.io/badge/integration-Apache%20SkyWalking-E97E25.svg)](skywalking/README.md)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/sagarnikam123/fuzzy-train/pulls)
+
 
 A versatile fake log generator for testing and development - runs anywhere.
 
@@ -43,20 +49,45 @@ docker pull sagarnikam123/fuzzy-train:latest
 docker run --rm sagarnikam123/fuzzy-train:latest
 ```
 
+
+## Sample output
+
+What the logs look like (varies each run). Commands are shown once here; flag details live in [Parameters](#parameters).
+
+### Default JSON — `python3 fuzzy-train.py`
+
+```text
+{"timestamp": "2026-10-02T12:55:10.660305+05:30", "level": "DEBUG", "message": "Crawford, Mueller and Valentine processed request for jnelson@example.org host web-44.perez.info r", "trace_id": "85483-00000001", "length": 98}
+{"timestamp": "2026-10-02T12:55:11.672904+05:30", "level": "ERROR", "message": "CONNECT https://roach.com/ completed user lesliechristensen from 190.55.58.76 accessed sea", "trace_id": "85483-00000002", "length": 90}
+{"timestamp": "2026-10-02T12:55:12.679090+05:30", "level": "WARN", "message": "user crystaldavis from 144.51.226.255 accessed app/category Heavy grow ever good. Smith, Peterson an", "trace_id": "85483-00000003", "length": 100}
+{"timestamp": "2026-10-02T12:55:13.683817+05:30", "level": "INFO", "message": "Should lose each make represent short movement loss. PUT https://lee.net/ completed Gilbert, Ber", "trace_id": "85483-00000004", "length": 96}
+```
+
+### HTTP access — `python3 fuzzy-train.py -f http --failure-rate 0.3 -n 4 --lines-per-second 1000`
+
+```text
+2026-10-02T12:59:23.680914+05:30 level=error method=GET url=/wp-content/tag status=500 duration=120ms
+2026-10-02T12:59:23.685397+05:30 level=info method=GET url=/wp-content status=200 duration=181ms
+2026-10-02T12:59:23.686981+05:30 level=error method=POST url=/main/explore status=500 duration=5302ms
+2026-10-02T12:59:23.688670+05:30 level=info method=GET url=/tags/tags/posts status=200 duration=55ms
+```
+
+### Apache combined — `python3 fuzzy-train.py -f "apache combined" --failure-rate 0.5 -n 2 --lines-per-second 1000`
+
+```text
+122.137.13.94 - - [02/Oct/2026:12:59:54 +0000] "POST /categories/category HTTP/1.1" 200 98 "http://www.martinez.com/" "Opera/8.35.(X11; Linux x86_64; fil-PH) Presto/2.9.168 Version/10.00"
+135.104.18.192 - - [02/Oct/2026:12:59:54 +0000] "POST /app/wp-content HTTP/1.1" 200 91 "http://www.jones.org/" "Mozilla/5.0 (Windows; U; Windows 98; Win 9x 4.90) AppleWebKit/535.40.4 (KHTML, like Gecko) Version/4.1 Safari/535.40.4"
+```
+
 ## Features
 
-- **Multiple Log Formats**: JSON, logfmt, Apache (common/combined/error), BSD syslog (RFC3164), Syslog (RFC5424)
-- **Configurable Output**: Customizable log length, generation rate, and output destination
-- **Timezone Support**: Local timezone or UTC timestamps
-- **Flexible Deployment**: Python script, Docker container, or Kubernetes (Deployment/DaemonSet)
-- **Process Tracking**: trace_id with either PID/Container ID or incremental integer for multi-instance tracking
-- **Realistic Data**: Random log levels (INFO, WARN, DEBUG, ERROR) and varied content; optional [faker](https://pypi.org/project/Faker/)-powered enrichment (IPs, HTTP methods/paths, user-agents, hostnames, usernames, companies) auto-enabled when installed, with zero-dependency fallback
-- **Output Options**: stdout, file, or both simultaneously
-- **Smart File Handling**: Accepts file paths or directory paths (auto-creates directories and default filename)
-- **Bounded Generation**: Generate an exact number of lines (`--count`) or up to a byte size (`--max-bytes`) then exit — ideal for reproducible fixtures
-- **Gzip Output**: Write compressed logs directly (`--compress` or a `.gz` filename)
-- **File Splitting**: Rotate output into multiple files by line count or bytes (`--split-by`) for log-rotation testing
-- **Fake Time Stepping**: Spread timestamps across a synthetic time range instantly (`--time-step`) without real waiting
+- **Formats**: JSON, logfmt, HTTP access, Apache (common/combined/error), BSD syslog (RFC3164), Syslog (RFC5424)
+- **Rate & content**: `--lines-per-second`, message length, `local`/`UTC` timestamps
+- **Deploy anywhere**: Python, Docker, Kubernetes (Deployment/DaemonSet)
+- **trace_id**: PID/container ID or integer; omit with `--no-trace-id` (see [Important Notes](#important-notes))
+- **Realistic data**: optional [faker](https://pypi.org/project/Faker/) enrichment (see [Quick Start](#quick-start)); zero-dependency fallback
+- **Output**: stdout, file, or both; directory paths auto-create `fuzzy-train.log`
+- **Opt-in controls**: `--count` / `--max-bytes`, `--compress`, `--split-by`, `--time-step`, `--failure-rate`, `--arrival` (see [Parameters](#parameters))
 
 ## Important Notes
 
@@ -72,16 +103,12 @@ Use `--no-trace-id` to exclude trace_id field, or `--trace-id-type integer` for 
 
 ### Python Script Usage
 
+Default JSON run is in [Quick Start](#quick-start); sample lines are in [Sample output](#sample-output).
+
 #### Get help and version
 ```bash
 python3 fuzzy-train.py --help
 python3 fuzzy-train.py --version  # or -v
-```
-
-#### Default usage
-Generates JSON logs to stdout with 90-100 character length, local timezone, trace_id=PID, 1 line per second:
-```bash
-python3 fuzzy-train.py
 ```
 
 #### Apache common logs
@@ -142,26 +169,22 @@ Passing `--file` alongside `--output stdout` writes to both destinations at once
 python3 fuzzy-train.py --output stdout --file fuzzy-train.log
 ```
 
-#### Bounded & file output
-Generate a fixed amount then exit, overwrite instead of append, or gzip the output. These are opt-in — the default remains infinite streaming. Bounded runs use a high `--lines-per-second` so they finish fast (default rate is 1 line/second). See [Output Control](#output-control) for all options.
+#### Bounded, gzip, HTTP / failure-rate
+See [Output Control](#output-control) for `--count` / `--max-bytes` / `--compress` / `--split-by` / `--time-step`, and [Log Content](#log-content) for `--failure-rate`, `--get-post-ratio`, durations, and `--arrival`. Shapes: [Sample output](#sample-output).
+
 ```bash
-# Exactly 1000 lines then exit
-python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --output file
+# Full HTTP simulator-style knobs (opt-in; defaults elsewhere unchanged)
+python3 fuzzy-train.py -f http --failure-rate 0.05 --get-post-ratio 0.9 \
+    --get-duration-ms 500 --post-duration-ms 2000 --arrival exponential \
+    --lines-per-second 2 -n 20
 
-# Truncate (overwrite) the file instead of appending
-python3 fuzzy-train.py --count 500 --lines-per-second 1000 --output file --overwrite
-
-# Gzip output explicitly with --compress (or just use a .gz filename)
-python3 fuzzy-train.py --count 500 --lines-per-second 1000 --file app.log --compress
+# Bias ERROR/5xx on JSON without switching format
+python3 fuzzy-train.py --failure-rate 0.2 -n 50 --lines-per-second 1000
 ```
 
 ### Docker Usage
 
-#### Quick start
-```bash
-docker pull sagarnikam123/fuzzy-train:latest
-docker run --rm sagarnikam123/fuzzy-train:latest
-```
+Same image as [Quick Start](#quick-start). Pass CLI flags after the image name.
 
 #### Run with custom parameters
 ```bash
@@ -181,13 +204,11 @@ docker run -d --name fuzzy-train-log-generator sagarnikam123/fuzzy-train:latest 
     --lines-per-second 2 --log-format JSON
 ```
 
-#### Bounded / gzip / split output (works in-container too)
-```bash
-# Generate 1000 lines to a mounted volume, then exit
-docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
-    --count 1000 --lines-per-second 1000 --file /logs/app.log
+#### Bounded file output (volume mount)
 
-# Gzip + split into 200-line parts (app.log.gz, app1.log.gz, ...)
+Same flags as [Output Control](#output-control); mount a host directory for `--file`:
+
+```bash
 docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
     --count 1000 --lines-per-second 1000 --split-by 200 --file /logs/app.log.gz
 ```
@@ -266,7 +287,7 @@ Common options have short forms: `-f` (`--log-format`), `-o` (`--output`), `-n` 
 |-----------|-------------|---------|
 | `-h, --help` | Show help message and exit | - |
 | `-v, --version` | Show version and exit | - |
-| `-f, --log-format` | Output format: `JSON`, `logfmt`, `apache common`, `apache combined`, `apache error`, `bsd syslog`, `syslog` | `JSON` |
+| `-f, --log-format` | Output format: `JSON`, `logfmt`, `http`, `apache common`, `apache combined`, `apache error`, `bsd syslog`, `syslog` | `JSON` |
 | `--lines-per-second` | Log lines generated per second | `1` |
 | `-o, --output` | Output destination: `stdout` or `file` | `stdout` |
 | `--file` | File or directory path for log output (auto-creates directories and default filename) | `fuzzy-train.log`* |
@@ -279,6 +300,11 @@ Common options have short forms: `-f` (`--log-format`), `-o` (`--output`), `-n` 
 | `--min-log-length` | Minimum message length in characters | `90` |
 | `--max-log-length` | Maximum message length in characters | `100` |
 | `--time-zone` | Timestamp timezone: `local` or `UTC` | `local` |
+| `--failure-rate` | Probability of `ERROR` / HTTP `500` (`0.0`–`1.0`). Unset = legacy mix; for `http` format unset means `0.0` (all 200) | `-` (unset) |
+| `--get-post-ratio` | P(GET) vs POST for `http` / apache when set (`0.0`–`1.0`). `http` uses `0.9` if unset | `-` (unset) |
+| `--get-duration-ms` | Mean GET duration (ms) for `--log-format http` | `500` |
+| `--post-duration-ms` | Mean POST duration (ms) for `--log-format http` | `2000` |
+| `--arrival` | Inter-arrival pacing: `fixed` or `exponential` | `fixed` |
 
 ### Field Control
 | Parameter | Description | Default |
@@ -323,50 +349,23 @@ python3 fuzzy-train.py --count 100 --time-step 1m --time-zone UTC --lines-per-se
 
 ## Verifying Output
 
-Quick ways to run the generator and confirm it produced what you expect.
+Assert what you got (shapes live in [Sample output](#sample-output); flags in [Parameters](#parameters)). Use a high `--lines-per-second` on bounded runs so they finish quickly.
 
-> **Tip:** the default rate is 1 line/second, so a bounded run like `--count 1000` would take ~1000s. Add a high `--lines-per-second` (e.g. `1000`) to finish bounded runs quickly.
-
-### Eyeball logs on stdout
 ```bash
-# Generate a few JSON logs and read them
-python3 fuzzy-train.py --count 3
+# Pretty-print a few JSON lines
+python3 fuzzy-train.py -n 3 --no-trace-id --lines-per-second 1000 \
+  | while read -r l; do echo "$l" | python3 -m json.tool; done
 
-# Pretty-print each JSON line
-python3 fuzzy-train.py --count 3 --no-trace-id | while read -r l; do echo "$l" | python3 -m json.tool; done
-
-# Try another format
-python3 fuzzy-train.py --count 3 --log-format "apache combined"
-```
-
-### Generate to a file and read it
-```bash
-python3 fuzzy-train.py --count 100 --lines-per-second 1000 --output file --file out.log
-tail -f out.log        # follow live
-wc -l out.log          # expect: 100 lines
-```
-
-### Decompress and read gzip output
-```bash
-python3 fuzzy-train.py --count 50 --lines-per-second 1000 --file out.log.gz
-gzip -dc out.log.gz | head        # read without unzipping to disk
-gzip -dc out.log.gz | wc -l       # expect: 50
-```
-
-### Validate --count and --split-by produced the right files
-```bash
-# 1000 lines split into 200-line files -> app.log, app1.log, app2.log, app3.log, app4.log
-python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --file app.log --split-by 200
-ls app*.log            # expect: 5 files
-wc -l app*.log         # each 200 lines, total 1000
-
-# Confirm exact line count for a bounded run
-python3 fuzzy-train.py --count 250 --lines-per-second 1000 --output file --file exact.log
+# Exact line count
+python3 fuzzy-train.py -n 250 --lines-per-second 1000 -o file --file exact.log
 test "$(wc -l < exact.log)" -eq 250 && echo "OK: 250 lines"
+
+# Split + gzip
+python3 fuzzy-train.py -n 1000 --lines-per-second 1000 --split-by 200 --file app.log.gz
+ls app*.log.gz && gzip -dc app.log.gz | wc -l   # expect parts; first part readable
 ```
 
-### Run the automated test suite
-See [docs/BUILD.md](docs/BUILD.md#running-the-test-suite) for the pytest suite that covers every argument and their interacting combinations.
+Automated coverage: [docs/BUILD.md](docs/BUILD.md#running-the-test-suite) (`pytest tests/ -q`).
 
 ## Development
 
