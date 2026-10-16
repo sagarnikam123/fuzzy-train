@@ -74,7 +74,7 @@ docker login
 
 docker buildx build --builder multiarch \
   --platform linux/amd64,linux/arm64 \
-  -t sagarnikam123/fuzzy-train:2.6.0 \
+  -t sagarnikam123/fuzzy-train:3.0.0 \
   -t sagarnikam123/fuzzy-train:latest \
   --push .
 ```
@@ -124,10 +124,10 @@ docker run --rm -v "$(pwd)/logs":/logs fuzzy-train:local \
   --count 10 --split-by 4 --file /logs/app.log.gz
 
 # Fake-time stepping: 3 logs, timestamps 1 minute apart
-docker run --rm fuzzy-train:local --count 3 --time-step 1m --time-zone UTC
+docker run --rm fuzzy-train:local --count 3 --time-step 1m --time-zone utc
 
 # Verify a pushed multi-arch image (pulls the arch matching your host)
-docker run --rm sagarnikam123/fuzzy-train:2.6.0 --version
+docker run --rm sagarnikam123/fuzzy-train:3.0.0 --version
 ```
 
 Read gzip output on the host:
