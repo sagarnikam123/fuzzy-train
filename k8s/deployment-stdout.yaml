@@ -28,9 +28,9 @@ spec:
           - "--lines-per-second"
           - "1"
           - "--time-zone"
-          - "UTC"
+          - "utc"
           - "--log-format"
-          - "JSON"
+          - "json"
           - "--output"
           - "stdout"
         resources:

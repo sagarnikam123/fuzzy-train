@@ -26,8 +26,8 @@ spec:
           - "--max-log-length"
           - "150"                   # Adjust for desired log size
           - "--time-zone"
-          - "UTC"
+          - "utc"
           - "--log-format"
-          - "JSON"
+          - "json"
           - "--output"
           - "stdout"
