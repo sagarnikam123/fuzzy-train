@@ -77,7 +77,7 @@ logger.addHandler(console_handler)
 # No manual sw_logging.install() needed.
 
 # Constants (matching fuzzy-train.py)
-__version__ = "1.0.0"
+__version__ = "3.0.0"
 DETAIL_PROBABILITY = 0.3
 TRACE_ID_COUNTER = 1
 

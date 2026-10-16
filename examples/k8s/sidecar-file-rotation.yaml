@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+  labels:
+    name: fuzzy-train
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-sidecar-file
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-sidecar-file
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: file-logging-sidecar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-sidecar-file
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-sidecar-file
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      volumes:
+        - name: shared-log-volume
+          emptyDir: {}
+      containers:
+        # Container 1: fuzzy-train writing rotated files to shared volume
+        - name: log-producer
+          image: sagarnikam123/fuzzy-train:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--type"
+            - "log"
+            - "--output"
+            - "/var/log/app/fuzzy-train.log"
+            - "--max-bytes"
+            - "5mb"
+            - "--compress"
+            - "3"
+            - "--lines-per-second"
+            - "20"
+            - "--log-format"
+            - "json"
+            - "--error-interval"
+            - "1m"
+          volumeMounts:
+            - name: shared-log-volume
+              mountPath: /var/log/app
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+
+        # Container 2: Sidecar streaming file logs to stdout for collector ingestion
+        - name: log-tailer
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              echo "Waiting for /var/log/app/fuzzy-train.log to be created..."
+              while [ ! -f /var/log/app/fuzzy-train.log ]; do sleep 1; done
+              echo "Tailing /var/log/app/fuzzy-train.log..."
+              exec tail -n +1 -F /var/log/app/fuzzy-train.log
+          volumeMounts:
+            - name: shared-log-volume
+              mountPath: /var/log/app
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"
+      restartPolicy: Always

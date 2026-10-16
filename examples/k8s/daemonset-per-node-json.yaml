@@ -1,0 +1,62 @@
+# DaemonSet - Per-Node JSON Log Generator with 1-Minute Error Intervals
+# Runs on every node in the cluster (including control-plane/master nodes via tolerations).
+# Creates the "fuzzy-train" namespace and emits an ERROR log every 1 minute (-e 1m).
+#
+# Usage:
+#   kubectl apply -f examples/k8s/daemonset-per-node-json.yaml
+#   kubectl logs -n fuzzy-train -l app=fuzzy-train-node-json -f --max-log-requests=10
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fuzzy-train-node-json
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-node-json
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: per-node-log-generator
+spec:
+  selector:
+    matchLabels:
+      app: fuzzy-train-node-json
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-node-json
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "json"
+          - "--lines-per-second"
+          - "5"
+          - "--time-zone"
+          - "utc"
+          - "--error-interval"
+          - "1m"                    # Emits an ERROR log every 1 minute (use 3m for 3-minute intervals)
+          - "--output"
+          - "stdout"
+        resources:
+          requests:
+            cpu: "25m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+      restartPolicy: Always

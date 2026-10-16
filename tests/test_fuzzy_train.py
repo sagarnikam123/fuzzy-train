@@ -389,7 +389,7 @@ def _run_in_cwd(
 def test_cli_version(script_path):
     r = _run(script_path, "--version")
     assert r.returncode == 0
-    assert "fuzzy-train" in r.stdout
+    assert "fuzzy-train 3.0.0" in r.stdout
 
 
 def test_cli_help_shows_output_control(script_path):
@@ -1283,3 +1283,110 @@ def test_stack_cli_with_failure_rate_and_json(script_path):
     assert len(lines) == 2
     assert lines[0]["stack"] == "python"
     assert "Traceback (most recent call last):" in lines[0]["stacktrace"]
+
+
+# ---------------------------------------------------------------------------
+# Task 10: Extended Coverage (Edge Cases & Additional Scenarios)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_lines_per_second_and_delay_mutually_exclusive(script_path):
+    r = _run(script_path, "-r", "10", "-d", "100ms", "-n", "1")
+    assert r.returncode != 0
+    assert "not allowed with argument" in r.stderr.lower() or "error" in r.stderr.lower()
+
+
+def test_container_process_id_detection(ft, monkeypatch):
+    import os
+    import socket
+
+    # 1. Docker environment (standard container hex ID without hyphens)
+    monkeypatch.setattr(os.path, "exists", lambda p: p == "/.dockerenv")
+    monkeypatch.setattr(socket, "gethostname", lambda: "a1b2c3d4e5f6789")
+    assert ft.get_process_id() == "a1b2c3d4e5f6"
+
+    # 2. Kubernetes environment with pod name hash
+    monkeypatch.setattr(os.path, "exists", lambda p: p == "/.dockerenv")
+    monkeypatch.setattr(socket, "gethostname", lambda: "order-service-7bb8c98d4-5k9lm")
+    assert ft.get_process_id() == "7bb8c98d4-5k"
+
+    # 3. Podman environment
+    monkeypatch.setattr(os.path, "exists", lambda p: p == "/run/.containerenv")
+    monkeypatch.setattr(socket, "gethostname", lambda: "podmanhost12345")
+    assert ft.get_process_id() == "podmanhost12"
+
+    # 4. Local non-container fallback
+    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    monkeypatch.setattr(os.environ, "get", lambda k: None)
+    assert ft.get_process_id() == str(os.getpid())
+
+
+def test_logfmt_stack_escapes_newlines(ft, sample_entry):
+    sample_entry["stack"] = "python"
+    sample_entry["stacktrace"] = (
+        "Traceback (most recent call last):\n"
+        "  File 'app.py', line 1\n"
+        "ZeroDivisionError: division by zero"
+    )
+    line = ft.format_log(sample_entry, "logfmt")
+    assert "\n" not in line
+    assert r"\n" in line
+    assert 'stack="python"' in line
+    assert (
+        'stacktrace="Traceback (most recent call last):\\n  File \'app.py\', line 1\\nZeroDivisionError: division by zero"'
+        in line
+    )
+
+
+@pytest.mark.parametrize(
+    "stack_lang",
+    ["go", "nodejs", "dotnet", "ruby", "rust", "php"],
+)
+def test_all_languages_cli_multiline(script_path, stack_lang):
+    r = _run(
+        script_path,
+        "--stack",
+        stack_lang,
+        "--failure-rate",
+        "1.0",
+        "-n",
+        "2",
+        "-r",
+        "1000",
+    )
+    assert r.returncode == 0
+    assert ("ERROR" in r.stdout) or ("[ERR]" in r.stdout)
+    lines = r.stdout.strip().splitlines()
+    assert len(lines) >= 3
+
+
+def test_timezone_offset_rendering(ft, sample_entry):
+    from datetime import datetime, timezone, timedelta
+
+    tz_custom = timezone(timedelta(hours=5, minutes=30))
+    dt_local = datetime(2026, 10, 16, 15, 30, 0, 123456, tzinfo=tz_custom)
+
+    # Apache common
+    common = ft.format_apache_common_log(sample_entry, dt=dt_local)
+    assert "+0530]" in common
+
+    # Apache combined
+    combined = ft.format_apache_combined_log(sample_entry, dt=dt_local)
+    assert "+0530]" in combined
+
+    # RFC 5424 syslog
+    syslog = ft.format_rfc5424_syslog_log(sample_entry, dt=dt_local)
+    assert "+05:30" in syslog
+
+
+def test_cli_broken_pipe_handled_cleanly(script_path):
+    code = f"""
+import subprocess, sys
+p = subprocess.Popen([sys.executable, {repr(script_path)}, "-r", "1000"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+p.stdout.close()
+_, stderr = p.communicate()
+assert b"BrokenPipeError" not in stderr
+"""
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0
+

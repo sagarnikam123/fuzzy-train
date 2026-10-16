@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-http
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-http
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: http-log-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-http
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-http
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "http"
+          - "--error-interval"
+          - "1m"                    # Emits a 500 error every 1 minute (adjust to 3m as desired)
+          - "--lines-per-second"
+          - "5"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always

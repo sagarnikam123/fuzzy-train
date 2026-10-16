@@ -1,0 +1,69 @@
+# Volume & Throughput Benchmark Job
+# Creates the "fuzzy-train" namespace and runs a bounded batch Job that generates
+# a target volume of logs (e.g. 1GB or 10GB) at a fixed rate (e.g. 0.5 MB/s or 1 MB/s)
+# and then terminates with exit code 0.
+#
+# Throughput Tuning Reference:
+#   1.0 MB/sec (JSON ~250B/line) : -r 4000
+#   0.5 MB/sec (JSON ~250B/line) : -r 2000
+#
+# Total Volume Target:
+#   1 GB  then stop : -b 1gb
+#   10 GB then stop : -b 10gb
+#
+# Usage:
+#   kubectl apply -f examples/k8s/volume-benchmark-job.yaml
+#
+# Stream logs during benchmark:
+#   kubectl logs -n fuzzy-train -l job-name=fuzzy-train-volume-benchmark -f
+#
+# Check completion:
+#   kubectl get jobs -n fuzzy-train
+#
+# Clean up:
+#   kubectl delete -f examples/k8s/volume-benchmark-job.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+  labels:
+    name: fuzzy-train
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzzy-train-volume-benchmark
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-volume-benchmark
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: volume-benchmark
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-volume-benchmark
+    spec:
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "json"
+          - "--lines-per-second"
+          - "4000"                    # ~1.0 MB/sec (use 2000 for 0.5 MB/sec)
+          - "--max-bytes"
+          - "1gb"                     # Stop after 1GB (switch to 10gb for 10GB run)
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "128Mi"
+          limits:
+            cpu: "1000m"
+            memory: "256Mi"
+      restartPolicy: Never

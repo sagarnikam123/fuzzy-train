@@ -1,0 +1,205 @@
+# Microservices Observability Mesh Simulation
+# Creates the "fuzzy-train" namespace and deploys 4 interconnected microservices:
+#   1. frontend-gateway : Apache Combined HTTP access logs
+#   2. auth-service     : Python application logs with multi-line tracebacks every 1m
+#   3. payment-service  : Java Spring Boot logs with stack traces every 3m
+#   4. order-service    : Key-value logfmt structured logs with error intervals
+#
+# Usage:
+#   kubectl apply -f examples/k8s/microservices-mesh.yaml
+#
+# View pods:
+#   kubectl get pods -n fuzzy-train
+#
+# Tail logs by service:
+#   kubectl logs -n fuzzy-train -l app=frontend-gateway -f
+#   kubectl logs -n fuzzy-train -l app=auth-service -f
+#   kubectl logs -n fuzzy-train -l app=payment-service -f
+#   kubectl logs -n fuzzy-train -l app=order-service -f
+#
+# Clean up:
+#   kubectl delete -f examples/k8s/microservices-mesh.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+  labels:
+    name: fuzzy-train
+    app.kubernetes.io/part-of: microservices-mesh
+---
+# 1. Frontend Gateway: HTTP Access Logs
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-gateway
+  namespace: fuzzy-train
+  labels:
+    app: frontend-gateway
+    service: frontend
+    tier: edge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend-gateway
+  template:
+    metadata:
+      labels:
+        app: frontend-gateway
+        service: frontend
+        tier: edge
+    spec:
+      containers:
+      - name: gateway
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "apache-combined"
+          - "--lines-per-second"
+          - "20"
+          - "--error-interval"
+          - "1m"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always
+---
+# 2. Auth Service: Python Multiline Exceptions (1m error interval)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: fuzzy-train
+  labels:
+    app: auth-service
+    service: auth
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+        service: auth
+        tier: backend
+    spec:
+      containers:
+      - name: auth
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--stack"
+          - "python"
+          - "--error-interval"
+          - "1m"
+          - "--lines-per-second"
+          - "2"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always
+---
+# 3. Payment Service: Java Spring Boot Stack Traces (3m error interval)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: fuzzy-train
+  labels:
+    app: payment-service
+    service: payment
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+        service: payment
+        tier: backend
+    spec:
+      containers:
+      - name: payment
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--stack"
+          - "java"
+          - "--error-interval"
+          - "3m"
+          - "--lines-per-second"
+          - "1"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always
+---
+# 4. Order Service: Logfmt Key-Value Logs (1m error interval)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: fuzzy-train
+  labels:
+    app: order-service
+    service: order
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        service: order
+        tier: backend
+    spec:
+      containers:
+      - name: order
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "logfmt"
+          - "--lines-per-second"
+          - "5"
+          - "--error-interval"
+          - "1m"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always

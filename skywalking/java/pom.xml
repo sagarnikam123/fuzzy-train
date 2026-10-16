@@ -6,7 +6,7 @@
 
     <groupId>com.sagarnikam123</groupId>
     <artifactId>fuzzy-train-skywalking</artifactId>
-    <version>1.0.0</version>
+    <version>3.0.0</version>
     <packaging>jar</packaging>
 
     <name>fuzzy-train-skywalking</name>

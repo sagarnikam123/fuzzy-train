@@ -2,12 +2,14 @@
 
 # fuzzy-train
 
+[![Version: 3.0.0](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/sagarnikam123/fuzzy-train/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python: 3.8+](https://img.shields.io/badge/python-3.8+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Tested with: pytest](https://img.shields.io/badge/tested%20with-pytest-0A9EDC.svg?logo=pytest&logoColor=white)](https://docs.pytest.org/)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
 [![Docker Pulls](https://img.shields.io/docker/pulls/sagarnikam123/fuzzy-train.svg?logo=docker&logoColor=white)](https://hub.docker.com/r/sagarnikam123/fuzzy-train)
-[![Deploy: Kubernetes](https://img.shields.io/badge/deploy-Kubernetes-326CE5.svg?logo=kubernetes&logoColor=white)](k8s/)
+[![Deploy: Kubernetes](https://img.shields.io/badge/deploy-Kubernetes-326CE5.svg?logo=kubernetes&logoColor=white)](examples/k8s/)
+[![Observability Examples](https://img.shields.io/badge/examples-observability%20recipes-orange.svg)](examples/README.md)
 [![Integration: SkyWalking](https://img.shields.io/badge/integration-Apache%20SkyWalking-E97E25.svg)](skywalking/README.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/sagarnikam123/fuzzy-train/pulls)
 
@@ -48,6 +50,9 @@ python3 fuzzy-train.py
 docker pull sagarnikam123/fuzzy-train:latest
 docker run --rm sagarnikam123/fuzzy-train:latest
 ```
+
+> [!TIP]
+> **Ready-to-use Observability Recipes:** Check the [`examples/`](examples/README.md) directory for copy-paste standalone, Docker Compose, and Kubernetes manifests (Minikube / EKS) tailored for testing Fluent Bit, Vector.dev, Grafana Loki, and Elasticsearch.
 
 
 ## Sample output
@@ -223,64 +228,79 @@ docker run --rm -v "$(pwd)":/logs sagarnikam123/fuzzy-train:latest \
 Generates logs to `./logs/` directory - useful for testing log file scrapers:
 ```bash
 # Start services
-docker-compose up -d
+docker compose up -d           # or docker-compose up -d
 
 # View generated log files
 ls -lh logs/
 tail -f logs/auth-service.log
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 #### Stdout output
 Generates logs to stdout - useful for testing log collectors (Fluent-bit, Vector, Promtail):
 ```bash
 # Start services
-docker-compose -f docker-compose-stdout.yml up -d
+docker compose -f docker-compose-stdout.yml up -d
 
 # View logs
-docker-compose -f docker-compose-stdout.yml logs -f auth-service
+docker compose -f docker-compose-stdout.yml logs -f auth-service
 
 # Stop services
-docker-compose -f docker-compose-stdout.yml down
+docker compose -f docker-compose-stdout.yml down
 ```
 
 > **Note**: Edit parameters in the `command` section of docker-compose files to customize log generation rates and formats.
 
 ### Kubernetes Deployment
 
+Self-contained manifests that automatically create the **`fuzzy-train`** namespace and launch workloads for testing Fluent Bit, Vector, Promtail/Loki, or Elasticsearch collectors.
+
 #### Deploy to Kubernetes
 ```bash
-# Deploy all manifests
-kubectl apply -f k8s/
+# 🚀 Recommended: Deploy the All-in-One Observability Stack (4 workloads in 'fuzzy-train' namespace)
+kubectl apply -f examples/k8s/all-in-one-namespace-stack.yaml
 
-# Or deploy individually
-kubectl apply -f k8s/deployment-file.yaml      # Writes logs to file
-kubectl apply -f k8s/deployment-stdout.yaml    # Writes logs to stdout
-kubectl apply -f k8s/daemonset-stdout.yaml     # DaemonSet - one pod per node
+# Or deploy a 4-tier Microservices Mesh (frontend, auth, payment, order):
+kubectl apply -f examples/k8s/microservices-mesh.yaml
+
+# Or deploy per-node DaemonSets (generates logs on every node with 1m error interval):
+kubectl apply -f examples/k8s/daemonset-per-node-multiline.yaml   # Java multi-line stack traces
+kubectl apply -f examples/k8s/daemonset-per-node-json.yaml        # Structured JSON
 ```
 
-#### Check deployment status
+#### Interactive Launcher Script
 ```bash
-# View all fuzzy-train resources
-kubectl get deployments,daemonsets | grep fuzzy-train
+# Linux / macOS:
+./examples/k8s/start-k8s-simulation.sh all-in-one
 
-# Check pod status
-kubectl get pods -l app=fuzzy-train
-kubectl get pods -l app=fuzzy-train-daemonset
-
-# View logs from stdout deployment
-kubectl logs -l app=fuzzy-train,output=stdout --tail=20
-
-# View logs from daemonset
-kubectl logs -l app=fuzzy-train-daemonset --tail=10 --prefix=true
-
-# Check file logs (exec into container)
-kubectl exec -it <pod-name> -- tail -f /logs/fuzzy-train.log
+# Windows (PowerShell):
+.\examples\k8s\start-k8s-simulation.ps1 -Scenario all-in-one
 ```
 
-> **Note**: Edit parameters in the `args` section of the YAML files in `k8s/` directory to customize log generation.
+#### Check Deployment & Stream Logs
+```bash
+# View all pods in the fuzzy-train namespace
+kubectl get pods -n fuzzy-train
+
+# View multi-line stack traces (Java Spring Boot)
+kubectl logs -n fuzzy-train -l app=fuzzy-train-multiline -f
+
+# View structured JSON stream
+kubectl logs -n fuzzy-train -l app=fuzzy-train-json -f
+
+# View DaemonSet logs across all nodes
+kubectl logs -n fuzzy-train -l app=fuzzy-train-node-daemon -f --max-log-requests=10
+```
+
+#### Clean Up
+```bash
+# Delete all resources and namespace in one command:
+kubectl delete namespace fuzzy-train
+```
+
+> **Explore More Recipes**: Full documentation, sidecar volume logging, CronJobs, and rate benchmarking are documented in [**`examples/k8s/`**](examples/k8s/).
 
 ## Parameters
 
@@ -334,11 +354,11 @@ All opt-in — the default remains infinite real-time streaming.
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `-n, --count` | Generate exactly N lines then exit | `0` (infinite) |
-| `-b, --max-bytes` | Generate until ≥ SIZE bytes then exit (accepts integers or `b`, `kb`, `mb`, `gb` — e.g. `10kb`, `5mb`, `1gb`; mutually exclusive with `-n`) | `0` (no cap) |
-| `-d, --duration` | Run for DURATION then exit (e.g. `10s`, `5m`, `1h`; respects `--time-step`) | `-` (infinite) |
+| `-b, --max-bytes, --bytes` | Generate until ≥ SIZE bytes then exit (accepts integers or `b`, `kb`, `mb`, `gb` — e.g. `10kb`, `5mb`, `1gb`, `10gb`; mutually exclusive with `-n`) | `0` (no cap) |
+| `--duration` | Run for DURATION then exit (e.g. `10s`, `5m`, `1h`; respects `--time-step`) | `-` (infinite) |
 | `-w, --overwrite` | Truncate the output file before writing instead of appending | `false` |
 | `-c, --compress` | Gzip file output (auto-enabled when `--file` ends with `.gz`) | `false` |
-| `-p, --split-by` | Rotate output file every N lines (or SIZE bytes like `10MB` when `--max-bytes` or byte unit is used) | `0` (no split) |
+| `-p, --split-by` | Rotate output file every N lines (or SIZE bytes like `10mb` when `--max-bytes` or byte unit is used) | `0` (no split) |
 | `-s, --time-step` | Advance each log's timestamp by DURATION without real waiting (e.g. `10`, `20ms`, `5s`, `1m`) | `-` (real time) |
 
 #### Bounded output examples
@@ -348,8 +368,9 @@ All opt-in — the default remains infinite real-time streaming.
 # Generate exactly 1000 lines to a file, then exit
 python3 fuzzy-train.py --count 1000 --lines-per-second 1000 --output file
 
-# Generate ~1MB of logs then exit
-python3 fuzzy-train.py --max-bytes 1048576 --lines-per-second 1000 --output file
+# Generate 1MB (or 1GB / 10GB) of logs then exit
+python3 fuzzy-train.py -b 1mb --lines-per-second 1000 --output file
+python3 fuzzy-train.py -b 1gb --lines-per-second 4000 --output file
 
 # Gzip-compressed output (500 lines)
 python3 fuzzy-train.py --file logs.gz --count 500 --lines-per-second 1000

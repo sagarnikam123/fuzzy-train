@@ -1,0 +1,209 @@
+# All-in-One Observability Simulation Stack
+# Creates the "fuzzy-train" namespace and deploys 4 workloads:
+#   1. Deployment: Java Spring Boot with multi-line stack traces every 1 minute
+#   2. Deployment: Continuous structured JSON logs (10 lines/sec)
+#   3. Deployment: HTTP access logs with status 200 & 500 error simulation
+#   4. DaemonSet: Per-node log generator with 3-minute error intervals
+#
+# Usage:
+#   kubectl apply -f examples/k8s/all-in-one-namespace-stack.yaml
+#
+# View pods:
+#   kubectl get pods -n fuzzy-train
+#
+# Stream logs from specific workload:
+#   kubectl logs -n fuzzy-train -l app=fuzzy-train-multiline -f
+#   kubectl logs -n fuzzy-train -l app=fuzzy-train-json -f
+#   kubectl logs -n fuzzy-train -l app=fuzzy-train-http -f
+#   kubectl logs -n fuzzy-train -l app=fuzzy-train-node-daemon -f --max-log-requests=10
+#
+# Clean up everything:
+#   kubectl delete -f examples/k8s/all-in-one-namespace-stack.yaml
+#   # or simply:
+#   kubectl delete namespace fuzzy-train
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+  labels:
+    name: fuzzy-train
+    app.kubernetes.io/part-of: fuzzy-train-observability
+---
+# 1. Multi-Line Stack Trace Deployment (Java Spring Boot)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-multiline
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-multiline
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: multiline-log-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-multiline
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-multiline
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--stack"
+          - "java"
+          - "--error-interval"
+          - "1m"                    # Emits a realistic multi-line stack trace every 1 minute
+          - "--lines-per-second"
+          - "2"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always
+---
+# 2. Continuous Structured JSON Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-json
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-json
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: json-log-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-json
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-json
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "json"
+          - "--lines-per-second"
+          - "10"
+          - "--time-zone"
+          - "utc"
+          - "--output"
+          - "stdout"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always
+---
+# 3. HTTP Access Log & Alert Rule Simulator Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzzy-train-http
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-http
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: http-log-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fuzzy-train-http
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-http
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "http"
+          - "--failure-rate"
+          - "0.1"
+          - "--lines-per-second"
+          - "5"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+      restartPolicy: Always
+---
+# 4. Per-Node DaemonSet with 3-Minute Error Intervals
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fuzzy-train-node-daemon
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-node-daemon
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: per-node-log-generator
+spec:
+  selector:
+    matchLabels:
+      app: fuzzy-train-node-daemon
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-node-daemon
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--log-format"
+          - "json"
+          - "--error-interval"
+          - "3m"                    # Emits an ERROR log on each node every 3 minutes
+          - "--lines-per-second"
+          - "2"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "25m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+      restartPolicy: Always

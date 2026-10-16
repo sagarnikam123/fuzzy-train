@@ -19,7 +19,7 @@ LABEL description="Fake log generator with SkyWalking integration (Java)"
 WORKDIR /app
 
 # Copy the built JAR
-COPY --from=builder /build/target/fuzzy-train-skywalking-1.0.0.jar /app/fuzzy-train-skywalking.jar
+COPY --from=builder /build/target/fuzzy-train-skywalking-3.0.0.jar /app/fuzzy-train-skywalking.jar
 
 # Default environment variables
 ENV SW_AGENT_NAME="skywalking-test::fuzzy-train-java"

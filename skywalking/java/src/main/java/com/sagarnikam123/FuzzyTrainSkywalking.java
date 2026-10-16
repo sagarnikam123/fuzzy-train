@@ -33,7 +33,7 @@ public class FuzzyTrainSkywalking {
     private static final AtomicLong logCount = new AtomicLong(0);
     private static final AtomicLong traceIdCounter = new AtomicLong(1);
     
-    private static final String VERSION = "1.0.0";
+    private static final String VERSION = "3.0.0";
     private static final double DETAIL_PROBABILITY = 0.3;
     
     // Log levels (matching fuzzy-train.py)

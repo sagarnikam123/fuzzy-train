@@ -1,0 +1,64 @@
+# DaemonSet - Per-Node Multi-Line Stack Trace Generator with 1-Minute Error Intervals
+# Runs on every node in the cluster to test node-level log collectors
+# (Fluent Bit DaemonSet, Vector DaemonSet, Promtail, Filebeat) tailing /var/log/pods.
+#
+# Creates the "fuzzy-train" namespace and deploys the DaemonSet.
+# Generates realistic Java Spring Boot logs on each node and emits a full
+# multi-line stack trace every 1 minute (-e 1m). Change to "3m" for 3-minute intervals.
+#
+# Usage:
+#   kubectl apply -f examples/k8s/daemonset-per-node-multiline.yaml
+#   kubectl logs -n fuzzy-train -l app=fuzzy-train-node-multiline -f --max-log-requests=10
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fuzzy-train
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fuzzy-train-node-multiline
+  namespace: fuzzy-train
+  labels:
+    app: fuzzy-train-node-multiline
+    app.kubernetes.io/name: fuzzy-train
+    app.kubernetes.io/component: per-node-multiline-generator
+spec:
+  selector:
+    matchLabels:
+      app: fuzzy-train-node-multiline
+  template:
+    metadata:
+      labels:
+        app: fuzzy-train-node-multiline
+        app.kubernetes.io/name: fuzzy-train
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+      - name: generator
+        image: sagarnikam123/fuzzy-train:latest
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--stack"
+          - "java"
+          - "--error-interval"
+          - "1m"                    # Emits a multi-line stack trace every 1 minute (adjust to 3m as needed)
+          - "--lines-per-second"
+          - "2"
+          - "--time-zone"
+          - "utc"
+        resources:
+          requests:
+            cpu: "25m"
+            memory: "32Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+      restartPolicy: Always

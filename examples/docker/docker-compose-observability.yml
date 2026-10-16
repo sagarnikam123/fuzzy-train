@@ -1,0 +1,65 @@
+# Docker Compose - Multi-Service Observability Simulation
+# Runs 4 simulated services with different formats and volumes to test collectors
+# (Fluent Bit, Vector, Promtail/Loki, Elastic Beats, OpenTelemetry Collector).
+#
+# Usage:
+#   docker compose -f examples/docker/docker-compose-observability.yml up -d
+#   docker compose -f examples/docker/docker-compose-observability.yml logs -f order-service
+#   docker compose -f examples/docker/docker-compose-observability.yml down
+
+services:
+  # 1. Java Microservice with Multi-Line Stack Traces
+  order-service:
+    image: sagarnikam123/fuzzy-train:latest
+    container_name: order-service
+    command:
+      - "--stack"
+      - "java"
+      - "--failure-rate"
+      - "0.2"
+      - "--lines-per-second"
+      - "2"
+      - "--time-zone"
+      - "utc"
+    restart: unless-stopped
+
+  # 2. High-Volume Structured JSON Logs
+  auth-service:
+    image: sagarnikam123/fuzzy-train:latest
+    container_name: auth-service
+    command:
+      - "--log-format"
+      - "json"
+      - "--lines-per-second"
+      - "500"
+      - "--time-zone"
+      - "utc"
+    restart: unless-stopped
+
+  # 3. HTTP Access Log Simulator (Status 200 & 500, Latencies, Methods)
+  api-gateway:
+    image: sagarnikam123/fuzzy-train:latest
+    container_name: api-gateway
+    command:
+      - "--log-format"
+      - "http"
+      - "--failure-rate"
+      - "0.1"
+      - "--lines-per-second"
+      - "10"
+      - "--time-zone"
+      - "utc"
+    restart: unless-stopped
+
+  # 4. Legacy Web Server (Apache Combined Format)
+  legacy-app:
+    image: sagarnikam123/fuzzy-train:latest
+    container_name: legacy-app
+    command:
+      - "--log-format"
+      - "apache-combined"
+      - "--lines-per-second"
+      - "5"
+      - "--time-zone"
+      - "utc"
+    restart: unless-stopped

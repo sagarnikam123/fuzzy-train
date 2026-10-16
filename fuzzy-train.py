@@ -32,6 +32,16 @@ import sys
 import time
 from typing import Any, Dict, Optional, Tuple, Union
 
+# Reconfigure standard streams on Windows to UTF-8 if available to prevent
+# UnicodeEncodeError on console output with default non-UTF-8 code pages (e.g. cp1252).
+if sys.platform == "win32":
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            try:
+                _stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 # Optional faker enrichment: when installed, logs use broad realistic data;
 # when absent, the script falls back to the built-in zero-dependency generator
 # so the instant fast path keeps working byte-compatibly.
@@ -75,7 +85,7 @@ SENTENCES = [
 ]
 
 # Constants
-__version__ = "2.4.0"
+__version__ = "3.0.0"
 DETAIL_PROBABILITY = 0.3
 # Trace ID sequence (itertools.count avoids a mutable module global + `global` stmt)
 TRACE_ID_SEQ = itertools.count(1)
@@ -92,15 +102,40 @@ BANNER = """┌─ FUZZY TRAIN ────────────────�
 │                                                                   │
 └───────────────────────────────────────────────────────────────────┘"""
 
+ASCII_BANNER = """+-- FUZZY TRAIN -----------------------------------------------------+
+|                                                                   |
+|   LOG GENERATION & TESTING FRAMEWORK                              |
+|   Version {version} | Multi-format Support | Container Ready        |
+|                                                                   |
++-------------------------------------------------------------------+"""
+
 
 def get_banner() -> str:
     """Return formatted banner with version number.
+
+    Falls back to an ASCII banner if stdout's encoding or the system's preferred
+    encoding cannot represent the Unicode box-drawing characters.
 
     Returns:
         str: Formatted banner with version number
     """
     version_padded = f"{__version__:<7}"  # Pad to 7 chars for alignment
-    return BANNER.format(version=version_padded)
+    banner_str = BANNER.format(version=version_padded)
+    preferred = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        import locale
+
+        system_enc = locale.getpreferredencoding(False) or preferred
+    except Exception:
+        system_enc = preferred
+
+    for enc in (preferred, system_enc):
+        try:
+            banner_str.encode(enc)
+        except (UnicodeEncodeError, LookupError):
+            return ASCII_BANNER.format(version=version_padded)
+
+    return banner_str
 
 
 # Default configuration constants
@@ -237,8 +272,8 @@ def generate_random_message(length: int) -> str:
         str: Generated message truncated to specified length
     """
     parts = []
-    current_len = 0
-    while current_len < length:
+    total_len = 0
+    while total_len < length:
         if FAKER_AVAILABLE:
             sentence = random.choice(_FAKER_MESSAGE_BUILDERS)()
         else:
@@ -247,7 +282,7 @@ def generate_random_message(length: int) -> str:
                 detail = "".join(random.choices(ALPHANUM, k=random.randint(10, 30)))
                 sentence = f"{sentence} Details: {detail}"
         parts.append(sentence)
-        current_len += len(sentence) + 1
+        total_len += len(sentence) if not total_len else (1 + len(sentence))
     return " ".join(parts)[:length]
 
 
@@ -371,7 +406,7 @@ def choose_http_url() -> str:
 def parse_entry_timestamp(
     entry: Dict[str, Any], dt: Optional[datetime] = None
 ) -> datetime:
-    """Return a naive datetime for log formatting, using `dt` directly when provided
+    """Return a datetime for log formatting, using `dt` directly when provided
     to avoid a redundant format-then-parse round-trip in the hot loop.
 
     Args:
@@ -379,16 +414,16 @@ def parse_entry_timestamp(
         dt: Optional precomputed datetime from the caller
 
     Returns:
-        datetime: Parsed timestamp (naive), or current time if absent/unparseable
+        datetime: Parsed timestamp, or current time if absent/unparseable
     """
     if dt is not None:
-        return dt.replace(tzinfo=None)
+        return dt
     ts = entry.get("timestamp")
     if not ts:
         return datetime.now()
     try:
         # Normalize a trailing 'Z' (UTC) which older fromisoformat rejects.
-        return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
     except ValueError:
         try:
             return datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
@@ -403,7 +438,17 @@ def format_json_log(entry: Dict[str, Any], dt: Optional[datetime] = None) -> str
 
 def format_logfmt_log(entry: Dict[str, Any], dt: Optional[datetime] = None) -> str:
     """Format log entry as logfmt."""
-    return " ".join(f'{k}="{str(v).replace("\"", "\\\"")}"' for k, v in entry.items())
+    def _escape_val(v: Any) -> str:
+        s = (
+            str(v)
+            .replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
+        return s
+
+    return " ".join(f'{k}="{_escape_val(v)}"' for k, v in entry.items())
 
 
 def format_apache_common_log(
@@ -414,7 +459,9 @@ def format_apache_common_log(
     ident = "-"
     user = "-"
     dt_obj = parse_entry_timestamp(entry, dt)
-    tstr = dt_obj.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
+    tz_offset = dt_obj.strftime("%z")
+    tz_str = tz_offset if tz_offset else "+0000"
+    tstr = dt_obj.strftime(f"[%d/%b/%Y:%H:%M:%S {tz_str}]")
     method = entry.get("method")
     if method is None:
         method = fake.http_method() if FAKER_AVAILABLE else "GET"
@@ -425,7 +472,7 @@ def format_apache_common_log(
     status = entry.get("status")
     if status is None:
         status = random.choice(DEFAULT_HTTP_STATUSES)
-    size = len(entry["message"])
+    size = len(entry.get("message", ""))
     return f'{host} {ident} {user} {tstr} "{request}" {status} {size}'
 
 
@@ -437,7 +484,9 @@ def format_apache_combined_log(
     ident = "-"
     user = "-"
     dt_obj = parse_entry_timestamp(entry, dt)
-    tstr = dt_obj.strftime("[%d/%b/%Y:%H:%M:%S +0000]")
+    tz_offset = dt_obj.strftime("%z")
+    tz_str = tz_offset if tz_offset else "+0000"
+    tstr = dt_obj.strftime(f"[%d/%b/%Y:%H:%M:%S {tz_str}]")
     method = entry.get("method")
     if method is None:
         method = fake.http_method() if FAKER_AVAILABLE else "GET"
@@ -448,7 +497,7 @@ def format_apache_combined_log(
     status = entry.get("status")
     if status is None:
         status = random.choice(DEFAULT_HTTP_STATUSES)
-    size = len(entry["message"])
+    size = len(entry.get("message", ""))
     referer = fake.url() if FAKER_AVAILABLE else "https://example.com/"
     ua = (
         fake.user_agent()
@@ -515,7 +564,12 @@ def format_rfc5424_syslog_log(
 ) -> str:
     """Format log entry as RFC5424 Syslog."""
     dt_obj = parse_entry_timestamp(entry, dt)
-    tstr = dt_obj.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    tz_offset = dt_obj.strftime("%z")
+    if tz_offset:
+        tz_formatted = f"{tz_offset[:3]}:{tz_offset[3:]}"
+    else:
+        tz_formatted = "Z"
+    tstr = dt_obj.strftime(f"%Y-%m-%dT%H:%M:%S.%f{tz_formatted}")
     host = fake.hostname() if FAKER_AVAILABLE else "localhost"
     app = fake.user_name() if FAKER_AVAILABLE else "fuzzy-train"
     proc_id = str(random.randint(100, 9999))
@@ -1176,7 +1230,7 @@ class OutputHandler:
             self.fh = None
 
 
-_DURATION_RE = re.compile(r"\s*([0-9]*\.?[0-9]+)\s*(ms|s|m|h)?\s*")
+_DURATION_RE = re.compile(r"\s*([0-9]*\.?[0-9]+)\s*([a-zA-Z]+)?\s*")
 _DURATION_FACTORS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
 _SIZE_RE = re.compile(r"([0-9]*\.?[0-9]+)\s*(b|kb|mb|gb)?")
 _SIZE_FACTORS = {"": 1, "b": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3}
@@ -1185,7 +1239,7 @@ _SIZE_FACTORS = {"": 1, "b": 1, "kb": 1024, "mb": 1024**2, "gb": 1024**3}
 def parse_duration(value: str, flag: str = "--time-step") -> float:
     """Parse a duration string into seconds (flog-style).
 
-    Accepts a plain number (seconds) or a suffixed value: ms, s, m, h.
+    Accepts a plain number (seconds) or a suffixed value: ms, s, m, h (case-insensitive).
     ponytail: supported units are ms/s/m/h; a bare number means seconds.
 
     Args:
@@ -1203,15 +1257,18 @@ def parse_duration(value: str, flag: str = "--time-step") -> float:
         print(f"Error: invalid {flag} duration '{value}' (use e.g. 10, 20ms, 5s, 1m)")
         raise SystemExit(1)
     num = float(m.group(1))
-    unit = m.group(2) or "s"
+    unit = (m.group(2) or "s").lower()
+    if unit not in _DURATION_FACTORS:
+        print(f"Error: invalid {flag} duration '{value}' (use e.g. 10, 20ms, 5s, 1m)")
+        raise SystemExit(1)
     return num * _DURATION_FACTORS[unit]
 
 
 def parse_size(value: Union[str, int], flag: str = "--max-bytes") -> int:
     """Parse a count or human-readable byte size into an integer.
 
-    Accepts plain integers (e.g. '1000', 1048576) or lowercase byte sizes:
-    b, kb, mb, gb (1024-based).
+    Accepts plain integers (e.g. '1000', 1048576) or byte sizes:
+    b, kb, mb, gb (case-insensitive, 1024-based).
 
     Args:
         value: Integer or size string (e.g. '500', '10kb', '5mb', '1gb')
@@ -1748,7 +1805,7 @@ def main() -> None:
 
     # split-by unit follows the active bound: bytes when byte-bounded (or when a byte suffix like mb is given), else lines
     has_byte_suffix = isinstance(split_by_raw, str) and bool(
-        re.search(r"(?:kb|mb|gb|b)$", split_by_raw.strip())
+        re.search(r"(?:kb|mb|gb|b)$", split_by_raw.strip(), re.IGNORECASE)
     )
     split_unit = (
         "bytes" if ((max_bytes > 0 and count == 0) or has_byte_suffix) else "lines"
@@ -1973,6 +2030,13 @@ def main() -> None:
                 time.sleep(fixed_interval)
     except KeyboardInterrupt:
         print("\nLog generation stopped.")
+    except BrokenPipeError:
+        # Piped to a consumer that exited (e.g. head, grep, restarted shipper).
+        # Suppress Python's noisy unhandled exception output on exit.
+        try:
+            sys.stderr.close()
+        except Exception:
+            pass
     finally:
         if handler:
             handler.close()

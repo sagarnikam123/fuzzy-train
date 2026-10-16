@@ -161,7 +161,7 @@ pytest tests/test_fuzzy_train.py::test_cli_count_exact_lines
 pytest tests/ -x -l
 ```
 
-A green run ends with a line like `81 passed in ~8s`. Any failure prints the
+A green run ends with a line like `162 passed in ~32s`. Any failure prints the
 failing test name, the assertion, and a diff of expected vs actual so you can
 pinpoint the regression.
 

@@ -43,13 +43,13 @@ cd java
 mvn clean package -DskipTests
 
 # Run without SkyWalking agent (logs go to stdout only)
-java -jar target/fuzzy-train-skywalking-1.0.0.jar --lines-per-second 2
+java -jar target/fuzzy-train-skywalking-3.0.0.jar --lines-per-second 2
 
 # Show help
-java -jar target/fuzzy-train-skywalking-1.0.0.jar --help
+java -jar target/fuzzy-train-skywalking-3.0.0.jar --help
 
 # Custom options
-java -jar target/fuzzy-train-skywalking-1.0.0.jar \
+java -jar target/fuzzy-train-skywalking-3.0.0.jar \
   --lines-per-second 5 \
   --min-log-length 120 \
   --max-log-length 150 \
@@ -93,7 +93,7 @@ kubectl logs -n skywalking-test -l app=fuzzy-train-java --tail=20
 cd python
 # Multi-platform build for EKS (amd64) + local dev (arm64/Apple Silicon)
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t sagarnikam123/fuzzy-train-skywalking-python:1.0.0 \
+  -t sagarnikam123/fuzzy-train-skywalking-python:3.0.0 \
   -t sagarnikam123/fuzzy-train-skywalking-python:latest --push .
 ```
 
@@ -103,7 +103,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 cd java
 # Multi-platform build for EKS (amd64) + local dev (arm64/Apple Silicon)
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t sagarnikam123/fuzzy-train-skywalking-java:1.0.0 \
+  -t sagarnikam123/fuzzy-train-skywalking-java:3.0.0 \
   -t sagarnikam123/fuzzy-train-skywalking-java:latest --push .
 ```
 
