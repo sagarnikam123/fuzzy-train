@@ -4,6 +4,7 @@ Scope: each CLI arg's behavior individually + the combinations that actually
 interact (not the full cartesian product). Function-level tests import the
 module; a few subprocess tests exercise main()'s bounded loop end to end.
 """
+
 import gzip
 import json
 import re
@@ -15,10 +16,10 @@ from typing import Union
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Task 2: Log-content args (min/max length, time-zone, message generation)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("length", [1, 50, 90, 200, 500])
 def test_message_length_preserved_faker(ft, length):
@@ -54,7 +55,7 @@ def test_validate_length_min_gt_max_exits(ft):
 
 
 def test_timezone_utc_has_z_suffix(ft):
-    ts = ft.generate_timestamp("UTC")
+    ts = ft.generate_timestamp("utc")
     assert ts.endswith("Z")
     # parseable ISO-ish shape
     assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z", ts)
@@ -70,6 +71,7 @@ def test_timezone_local_has_offset(ft):
 # ---------------------------------------------------------------------------
 # Task 3: Field-control args (no-* flags, trace-id-type, field order)
 # ---------------------------------------------------------------------------
+
 
 def test_build_entry_all_fields_order(ft):
     e = ft.build_log_entry("TS", "INFO", "msg", "tid", True, True, True)
@@ -129,16 +131,22 @@ def test_trace_id_counter_increments(ft):
 # Task 4: Format args (--log-format values + default)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def sample_entry(ft):
     return ft.build_log_entry(
-        "2026-01-01T00:00:00.000000Z", "INFO", "hello world", "tid-1",
-        True, True, True,
+        "2026-01-01T00:00:00.000000Z",
+        "INFO",
+        "hello world",
+        "tid-1",
+        True,
+        True,
+        True,
     )
 
 
 def test_format_json(ft, sample_entry):
-    line = ft.format_log(sample_entry, "JSON")
+    line = ft.format_log(sample_entry, "json")
     parsed = json.loads(line)
     assert parsed["message"] == "hello world"
 
@@ -150,32 +158,41 @@ def test_format_logfmt(ft, sample_entry):
 
 
 def test_format_apache_common(ft, sample_entry):
-    line = ft.format_log(sample_entry, "apache common")
+    line = ft.format_log(sample_entry, "apache-common")
     assert re.search(r'"\S+ /\S* HTTP/1\.1" \d{3} \d+', line)
 
 
 def test_format_apache_combined(ft, sample_entry):
-    line = ft.format_log(sample_entry, "apache combined")
+    line = ft.format_log(sample_entry, "apache-combined")
     # request, referer, user-agent => 6 double quotes
     assert line.count('"') == 6
 
 
 def test_format_apache_error(ft, sample_entry):
-    line = ft.format_log(sample_entry, "apache error")
+    line = ft.format_log(sample_entry, "apache-error")
     assert line.startswith("[") and "hello world" in line
     assert "[core:info]" in line
 
 
-@pytest.mark.parametrize("fmt", ["bsd syslog", "rfc3164"])
+@pytest.mark.parametrize("fmt", ["bsd-syslog", "rfc3164"])
 def test_format_bsd_syslog(ft, sample_entry, fmt):
     line = ft.format_log(sample_entry, fmt)
-    assert line.startswith("<13>") and "hello world" in line
+    assert re.match(r"^<\d{1,3}>[A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} ", line)
+    assert "hello world" in line
 
 
 @pytest.mark.parametrize("fmt", ["syslog", "rfc5424"])
 def test_format_rfc5424(ft, sample_entry, fmt):
     line = ft.format_log(sample_entry, fmt)
-    assert line.startswith("<13>1 ") and "hello world" in line
+    assert re.match(r"^<\d{1,3}>1 \S+ \S+ \S+ \d+ ID\d+ - ", line)
+    assert "hello world" in line
+
+
+def test_syslog_pri_reflects_log_level(ft):
+    err_pri = int(ft.compute_syslog_pri({"level": "ERROR"}).strip("<>"))
+    info_pri = int(ft.compute_syslog_pri({"level": "INFO"}).strip("<>"))
+    assert err_pri % 8 == 3  # RFC 5424 severity 3 = Error
+    assert info_pri % 8 == 6  # RFC 5424 severity 6 = Informational
 
 
 def test_format_unknown_defaults_to_json(ft, sample_entry):
@@ -187,10 +204,19 @@ def test_format_unknown_defaults_to_json(ft, sample_entry):
 # Task 5: Output-control individual (parse_duration, OutputHandler, time-step)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("value,expected", [
-    ("10", 10.0), ("20ms", 0.02), ("5s", 5.0), ("1m", 60.0), ("2h", 7200.0),
-    ("0.5s", 0.5), ("1.5m", 90.0),
-])
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("10", 10.0),
+        ("20ms", 0.02),
+        ("5s", 5.0),
+        ("1m", 60.0),
+        ("2h", 7200.0),
+        ("0.5s", 0.5),
+        ("1.5m", 90.0),
+    ],
+)
 def test_parse_duration_valid(ft, value, expected):
     assert ft.parse_duration(value) == pytest.approx(expected)
 
@@ -279,8 +305,8 @@ def test_output_handler_split_gzip_name_pairing(ft, tmp_path):
 
 def test_time_step_timestamps_advance(ft):
     base = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    t0 = ft.generate_timestamp("UTC", base=base)
-    t1 = ft.generate_timestamp("UTC", base=base + timedelta(seconds=60))
+    t0 = ft.generate_timestamp("utc", base=base)
+    t1 = ft.generate_timestamp("utc", base=base + timedelta(seconds=60))
     assert t0 == "2026-01-01T00:00:00.000000Z"
     assert t1 == "2026-01-01T00:01:00.000000Z"
 
@@ -288,6 +314,7 @@ def test_time_step_timestamps_advance(ft):
 # ---------------------------------------------------------------------------
 # Task 6: Interacting combinations that matter
 # ---------------------------------------------------------------------------
+
 
 def test_faker_parity_message_valid_both(ft, ft_no_faker):
     # same length request yields valid length in both modes
@@ -333,19 +360,29 @@ def test_overwrite_with_multiple_writes(ft, tmp_path):
 # Task 7: End-to-end CLI (subprocess) — bounded runs so main() terminates
 # ---------------------------------------------------------------------------
 
-def _run(script_path: str, *args: str, timeout: float = 30) -> subprocess.CompletedProcess:
+
+def _run(
+    script_path: str, *args: str, timeout: float = 30
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, script_path, *args],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
-def _run_in_cwd(script_path: str, cwd: Union[str, Path], *args: str, timeout: float = 30) -> subprocess.CompletedProcess:
+def _run_in_cwd(
+    script_path: str, cwd: Union[str, Path], *args: str, timeout: float = 30
+) -> subprocess.CompletedProcess:
     # Run with a specific working directory so default-filename output
     # (fuzzy-train.log) lands in an isolated tmp dir.
     return subprocess.run(
         [sys.executable, script_path, *args],
-        capture_output=True, text=True, timeout=timeout, cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=str(cwd),
     )
 
 
@@ -359,13 +396,27 @@ def test_cli_help_shows_output_control(script_path):
     r = _run(script_path, "--help")
     assert r.returncode == 0
     assert "Output Control" in r.stdout
-    for flag in ["--count", "--max-bytes", "--overwrite", "--compress", "--split-by", "--time-step"]:
+    for flag in [
+        "--count",
+        "--max-bytes",
+        "--overwrite",
+        "--compress",
+        "--split-by",
+        "--time-step",
+    ]:
         assert flag in r.stdout
 
 
 def test_cli_count_exact_lines(script_path):
-    r = _run(script_path, "--count", "5", "--lines-per-second", "1000",
-             "--no-timestamp", "--no-trace-id")
+    r = _run(
+        script_path,
+        "--count",
+        "5",
+        "--lines-per-second",
+        "1000",
+        "--no-timestamp",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     lines = [l for l in r.stdout.splitlines() if l.strip()]
     assert len(lines) == 5
@@ -381,23 +432,50 @@ def test_cli_count_json_valid(script_path):
 
 def test_cli_max_bytes_to_file(script_path, tmp_path):
     out = tmp_path / "mb.log"
-    r = _run(script_path, "--max-bytes", "400", "--lines-per-second", "1000", "--file", str(out))
+    r = _run(
+        script_path,
+        "--max-bytes",
+        "400",
+        "--lines-per-second",
+        "1000",
+        "--file",
+        str(out),
+    )
     assert r.returncode == 0
     assert out.stat().st_size >= 400
 
 
 def test_cli_count_beats_max_bytes(script_path, tmp_path):
-    # count set => max-bytes ignored => exactly 4 lines
+    # count set => max-bytes ignored => exactly 4 lines (flog parity)
     out = tmp_path / "cb.log"
-    r = _run(script_path, "--count", "4", "--max-bytes", "999999", "--lines-per-second", "1000",
-             "--file", str(out), "--no-timestamp", "--no-trace-id")
+    r = _run(
+        script_path,
+        "--count",
+        "4",
+        "--max-bytes",
+        "999999",
+        "--lines-per-second",
+        "1000",
+        "--file",
+        str(out),
+        "--no-timestamp",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     assert len(out.read_text().splitlines()) == 4
 
 
+def test_cli_failure_rate_and_error_interval_mutually_exclusive(script_path):
+    r = _run(script_path, "--failure-rate", "0.5", "-e", "5s", "-n", "1")
+    assert r.returncode != 0
+    assert "not allowed with argument" in r.stderr
+
+
 def test_cli_gzip_file(script_path, tmp_path):
     out = tmp_path / "z.log.gz"
-    r = _run(script_path, "--count", "6", "--lines-per-second", "1000", "--file", str(out))
+    r = _run(
+        script_path, "--count", "6", "--lines-per-second", "1000", "--file", str(out)
+    )
     assert r.returncode == 0
     with gzip.open(str(out), "rt") as fh:
         assert len([l for l in fh.read().splitlines() if l.strip()]) == 6
@@ -405,16 +483,36 @@ def test_cli_gzip_file(script_path, tmp_path):
 
 def test_cli_split_files(script_path, tmp_path):
     out = tmp_path / "s.log"
-    r = _run(script_path, "--count", "10", "--split-by", "4", "--lines-per-second", "1000",
-             "--file", str(out))
+    r = _run(
+        script_path,
+        "--count",
+        "10",
+        "--split-by",
+        "4",
+        "--lines-per-second",
+        "1000",
+        "--file",
+        str(out),
+    )
     assert r.returncode == 0
     parts = sorted(tmp_path.glob("s*.log"))
     assert len(parts) == 3  # 4,4,2
 
 
 def test_cli_time_step_spacing(script_path):
-    r = _run(script_path, "--count", "3", "--time-step", "1m", "--time-zone", "UTC",
-             "--lines-per-second", "1000", "--no-trace-id", "--no-length")
+    r = _run(
+        script_path,
+        "--count",
+        "3",
+        "--time-step",
+        "1m",
+        "--time-zone",
+        "utc",
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
+        "--no-length",
+    )
     lines = [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
     ts = [l["timestamp"] for l in lines]
     assert len(ts) == 3
@@ -438,16 +536,31 @@ def test_cli_nonpositive_rate_exits(script_path, rate):
     assert "lines-per-second" in (r.stdout + r.stderr)
 
 
-@pytest.mark.parametrize("short,long_equiv_args", [
-    (["-f", "logfmt", "-n", "3"], ["--log-format", "logfmt", "--count", "3"]),
-    (["-n", "4"], ["--count", "4"]),
-])
+@pytest.mark.parametrize(
+    "short,long_equiv_args",
+    [
+        (["-f", "logfmt", "-n", "3"], ["--log-format", "logfmt", "--count", "3"]),
+        (["-n", "4"], ["--count", "4"]),
+    ],
+)
 def test_cli_short_forms_parse(script_path, short, long_equiv_args):
     # short form runs and produces the same line count as its long equivalent
-    r_short = _run(script_path, *short, "--lines-per-second", "1000",
-                   "--no-trace-id", "--no-timestamp")
-    r_long = _run(script_path, *long_equiv_args, "--lines-per-second", "1000",
-                  "--no-trace-id", "--no-timestamp")
+    r_short = _run(
+        script_path,
+        *short,
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
+        "--no-timestamp",
+    )
+    r_long = _run(
+        script_path,
+        *long_equiv_args,
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
+        "--no-timestamp",
+    )
     assert r_short.returncode == 0 and r_long.returncode == 0
     n_short = len([l for l in r_short.stdout.splitlines() if l.strip()])
     n_long = len([l for l in r_long.stdout.splitlines() if l.strip()])
@@ -457,8 +570,20 @@ def test_cli_short_forms_parse(script_path, short, long_equiv_args):
 def test_cli_short_forms_output_control(script_path, tmp_path):
     # -n (count) -o (output) -w (overwrite) -p (split) together
     out = tmp_path / "s.log"
-    r = _run(script_path, "-n", "10", "-o", "file", "-w", "-p", "4",
-             "--file", str(out), "--lines-per-second", "1000")
+    r = _run(
+        script_path,
+        "-n",
+        "10",
+        "-o",
+        "file",
+        "-w",
+        "-p",
+        "4",
+        "--file",
+        str(out),
+        "--lines-per-second",
+        "1000",
+    )
     assert r.returncode == 0
     parts = sorted(tmp_path.glob("s*.log"))
     assert len(parts) == 3  # 4,4,2
@@ -467,16 +592,33 @@ def test_cli_short_forms_output_control(script_path, tmp_path):
 def test_cli_overwrite_truncates(script_path, tmp_path):
     out = tmp_path / "ow.log"
     _run(script_path, "--count", "5", "--lines-per-second", "1000", "--file", str(out))
-    _run(script_path, "--count", "1", "--lines-per-second", "1000", "--file", str(out),
-         "--overwrite", "--no-timestamp", "--no-trace-id")
+    _run(
+        script_path,
+        "--count",
+        "1",
+        "--lines-per-second",
+        "1000",
+        "--file",
+        str(out),
+        "--overwrite",
+        "--no-timestamp",
+        "--no-trace-id",
+    )
     assert len(out.read_text().splitlines()) == 1
 
 
 def test_cli_compress_auto_enables_file(script_path, tmp_path):
     # --compress alone (no --output file) implies file output, warns on stderr,
     # and writes gzip to the default filename in the cwd.
-    r = _run_in_cwd(script_path, tmp_path, "--compress", "--count", "3",
-                    "--lines-per-second", "1000")
+    r = _run_in_cwd(
+        script_path,
+        tmp_path,
+        "--compress",
+        "--count",
+        "3",
+        "--lines-per-second",
+        "1000",
+    )
     assert r.returncode == 0
     assert "imply file output" in r.stderr
     out = tmp_path / "fuzzy-train.log"
@@ -487,8 +629,17 @@ def test_cli_compress_auto_enables_file(script_path, tmp_path):
 
 def test_cli_overwrite_alone_enables_file(script_path, tmp_path):
     # --overwrite alone (no --output file) implies file output.
-    r = _run_in_cwd(script_path, tmp_path, "--overwrite", "--count", "2",
-                    "--lines-per-second", "1000", "--no-timestamp", "--no-trace-id")
+    r = _run_in_cwd(
+        script_path,
+        tmp_path,
+        "--overwrite",
+        "--count",
+        "2",
+        "--lines-per-second",
+        "1000",
+        "--no-timestamp",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     out = tmp_path / "fuzzy-train.log"
     assert out.exists()
@@ -499,14 +650,26 @@ def test_cli_count_zero_streams_then_interrupt(script_path):
     # --count 0 means infinite streaming (today's default); it must NOT exit on
     # its own. Confirm it keeps running until we time out, then produced output.
     proc = subprocess.Popen(
-        [sys.executable, script_path, "--count", "0", "--lines-per-second", "1000",
-         "--no-timestamp", "--no-trace-id"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        [
+            sys.executable,
+            script_path,
+            "--count",
+            "0",
+            "--lines-per-second",
+            "1000",
+            "--no-timestamp",
+            "--no-trace-id",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
         try:
             proc.wait(timeout=2)
-            raise AssertionError("--count 0 should stream forever, but the process exited")
+            raise AssertionError(
+                "--count 0 should stream forever, but the process exited"
+            )
         except subprocess.TimeoutExpired:
             proc.terminate()
             out, _ = proc.communicate(timeout=5)
@@ -516,9 +679,11 @@ def test_cli_count_zero_streams_then_interrupt(script_path):
             proc.kill()
             proc.wait()
 
+
 # ---------------------------------------------------------------------------
 # Failure-rate / HTTP access / arrival (opt-in; defaults must stay unchanged)
 # ---------------------------------------------------------------------------
+
 
 def test_choose_log_level_unset_uses_all_levels(ft):
     # With failure_rate=None, every LOG_LEVEL must be reachable (legacy mix).
@@ -584,36 +749,79 @@ def test_cli_default_json_schema_unchanged(script_path):
         if not line.strip():
             continue
         obj = json.loads(line)
-        assert set(obj.keys()) <= {"timestamp", "level", "message", "length", "trace_id"}
+        assert set(obj.keys()) <= {
+            "timestamp",
+            "level",
+            "message",
+            "length",
+            "trace_id",
+        }
         assert "method" not in obj and "status" not in obj and "duration_ms" not in obj
 
 
 def test_cli_failure_rate_one_all_error(script_path):
-    r = _run(script_path, "--count", "30", "--lines-per-second", "1000",
-             "--failure-rate", "1.0", "--no-trace-id", "--no-length")
+    r = _run(
+        script_path,
+        "--count",
+        "30",
+        "--lines-per-second",
+        "1000",
+        "--failure-rate",
+        "1.0",
+        "--no-trace-id",
+        "--no-length",
+    )
     assert r.returncode == 0
     levels = [json.loads(l)["level"] for l in r.stdout.splitlines() if l.strip()]
     assert levels and all(lvl == "ERROR" for lvl in levels)
 
 
 def test_cli_failure_rate_zero_no_error(script_path):
-    r = _run(script_path, "--count", "30", "--lines-per-second", "1000",
-             "--failure-rate", "0.0", "--no-trace-id", "--no-length")
+    r = _run(
+        script_path,
+        "--count",
+        "30",
+        "--lines-per-second",
+        "1000",
+        "--failure-rate",
+        "0.0",
+        "--no-trace-id",
+        "--no-length",
+    )
     assert r.returncode == 0
     levels = [json.loads(l)["level"] for l in r.stdout.splitlines() if l.strip()]
     assert levels and all(lvl != "ERROR" for lvl in levels)
 
 
 def test_cli_failure_rate_invalid(script_path):
-    r = _run(script_path, "--failure-rate", "1.5", "--count", "1", "--lines-per-second", "1000")
+    r = _run(
+        script_path,
+        "--failure-rate",
+        "1.5",
+        "--count",
+        "1",
+        "--lines-per-second",
+        "1000",
+    )
     assert r.returncode != 0
     assert "failure-rate" in r.stderr.lower() or "failure-rate" in r.stdout.lower()
 
 
 def test_cli_http_format_fields(script_path):
-    r = _run(script_path, "--log-format", "http", "--count", "5",
-             "--lines-per-second", "1000", "--failure-rate", "0.0",
-             "--get-post-ratio", "1.0", "--no-trace-id")
+    r = _run(
+        script_path,
+        "--log-format",
+        "http",
+        "--count",
+        "5",
+        "--lines-per-second",
+        "1000",
+        "--failure-rate",
+        "0.0",
+        "--get-post-ratio",
+        "1.0",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     lines = [l for l in r.stdout.splitlines() if l.strip()]
     assert len(lines) == 5
@@ -625,8 +833,18 @@ def test_cli_http_format_fields(script_path):
 
 
 def test_cli_http_failure_rate_all_500(script_path):
-    r = _run(script_path, "-f", "http", "--count", "20", "--lines-per-second", "1000",
-             "--failure-rate", "1.0", "--no-trace-id")
+    r = _run(
+        script_path,
+        "-f",
+        "http",
+        "--count",
+        "20",
+        "--lines-per-second",
+        "1000",
+        "--failure-rate",
+        "1.0",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     for line in r.stdout.splitlines():
         if line.strip():
@@ -637,20 +855,40 @@ def test_cli_http_failure_rate_all_500(script_path):
 def test_cli_help_shows_failure_rate_and_http(script_path):
     r = _run(script_path, "--help")
     assert r.returncode == 0
-    for flag in ["--failure-rate", "--get-post-ratio", "--get-duration-ms",
-                 "--post-duration-ms", "--arrival", "http"]:
+    for flag in [
+        "--failure-rate",
+        "--get-post-ratio",
+        "--get-duration-ms",
+        "--post-duration-ms",
+        "--arrival",
+        "http",
+    ]:
         assert flag in r.stdout
 
 
 def test_cli_arrival_exponential_runs(script_path):
-    r = _run(script_path, "--count", "3", "--lines-per-second", "1000",
-             "--arrival", "exponential", "--no-trace-id")
+    r = _run(
+        script_path,
+        "--count",
+        "3",
+        "--lines-per-second",
+        "1000",
+        "--arrival",
+        "exponential",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     assert len([l for l in r.stdout.splitlines() if l.strip()]) == 3
 
 
 def test_format_http_omits_blank_timestamp(ft):
-    entry = {"level": "ERROR", "method": "GET", "url": "/", "status": 500, "duration_ms": 1}
+    entry = {
+        "level": "ERROR",
+        "method": "GET",
+        "url": "/",
+        "status": 500,
+        "duration_ms": 1,
+    }
     line = ft.format_http_log(entry)
     assert not line.startswith(" ")
     assert line.startswith("level=error")
@@ -659,8 +897,19 @@ def test_format_http_omits_blank_timestamp(ft):
 
 def test_cli_http_no_log_level_keeps_synced_level(script_path):
     # --no-log-level must not desync http level vs status under --failure-rate.
-    r = _run(script_path, "-f", "http", "--count", "20", "--lines-per-second", "1000",
-             "--failure-rate", "1.0", "--no-log-level", "--no-trace-id")
+    r = _run(
+        script_path,
+        "-f",
+        "http",
+        "--count",
+        "20",
+        "--lines-per-second",
+        "1000",
+        "--failure-rate",
+        "1.0",
+        "--no-log-level",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     for line in r.stdout.splitlines():
         if line.strip():
@@ -669,8 +918,19 @@ def test_cli_http_no_log_level_keeps_synced_level(script_path):
 
 
 def test_cli_http_no_timestamp_still_emits_ts(script_path):
-    r = _run(script_path, "-f", "http", "--count", "3", "--lines-per-second", "1000",
-             "--no-timestamp", "--no-trace-id", "--failure-rate", "0.0")
+    r = _run(
+        script_path,
+        "-f",
+        "http",
+        "--count",
+        "3",
+        "--lines-per-second",
+        "1000",
+        "--no-timestamp",
+        "--no-trace-id",
+        "--failure-rate",
+        "0.0",
+    )
     assert r.returncode == 0
     for line in r.stdout.splitlines():
         if not line.strip():
@@ -683,8 +943,16 @@ def test_cli_http_no_timestamp_still_emits_ts(script_path):
 
 def test_cli_http_unset_failure_rate_all_200(script_path):
     # -f http without --failure-rate => simulator-style 0% failures (all 200).
-    r = _run(script_path, "-f", "http", "--count", "40", "--lines-per-second", "1000",
-             "--no-trace-id")
+    r = _run(
+        script_path,
+        "-f",
+        "http",
+        "--count",
+        "40",
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
+    )
     assert r.returncode == 0
     for line in r.stdout.splitlines():
         if line.strip():
@@ -692,153 +960,326 @@ def test_cli_http_unset_failure_rate_all_200(script_path):
             assert "status=500" not in line
             assert "status=404" not in line
 
+
 # ---------------------------------------------------------------------------
-# Language styles / multiline stacks (--style, --error-every, plain)
+# --error-interval (periodic ERROR / HTTP 500 generation)
 # ---------------------------------------------------------------------------
 
-def test_load_style_java(ft):
-    style = ft.load_style("java")
-    assert style["language"] == "java"
-    assert style["info_messages"]
-    assert style["errors"]
-    assert "NullPointerException" in style["errors"][0]["body"]
-    assert "\n" in style["errors"][0]["body"]
+
+def test_should_emit_interval_error_unit(ft):
+    from datetime import datetime, timezone, timedelta
+
+    t0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    # First event starts the interval timer (not an error yet)
+    failed, last = ft.should_emit_interval_error(5.0, None, t0)
+    assert failed is False
+    assert last == t0
+    # 3s later (< 5s): no error
+    failed, last = ft.should_emit_interval_error(5.0, last, t0 + timedelta(seconds=3))
+    assert failed is False
+    assert last == t0
+    # 5s later (>= 5s): error emitted and timer advances
+    t5 = t0 + timedelta(seconds=5)
+    failed, last = ft.should_emit_interval_error(5.0, last, t5)
+    assert failed is True
+    assert last == t5
 
 
-def test_load_style_python(ft):
-    style = ft.load_style("python")
-    assert any("Traceback" in e["body"] for e in style["errors"])
-
-
-def test_load_style_missing_exits(ft):
-    with pytest.raises(SystemExit):
-        ft.load_style("no-such-lang")
-
-
-def test_should_emit_style_error_every(ft):
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    ok, _ = ft.should_emit_style_error(2, None, 3, None, None, now)
-    assert ok is True
-    ok, _ = ft.should_emit_style_error(0, None, 3, None, None, now)
-    assert ok is False
-
-
-def test_format_plain_preserves_newlines(ft):
-    body = "line1\nline2\nline3"
-    assert ft.format_plain_log({"message": body}) == body
-
-
-def test_cli_style_error_every_emits_stack(script_path):
-    r = _run(script_path, "--style", "java", "--error-every", "2",
-             "--count", "4", "--lines-per-second", "1000")
-    assert r.returncode == 0
-    # Any builtin java fixture (large SE8 Exception/Error pool).
-    assert "Exception" in r.stdout or "Error" in r.stdout
-    assert "	at " in r.stdout or "at com.example" in r.stdout or "at java." in r.stdout
-
-
-def test_cli_style_python_traceback(script_path):
-    r = _run(script_path, "--style", "python", "--failure-rate", "1.0",
-             "-n", "1", "--lines-per-second", "1000")
-    assert r.returncode == 0
-    assert "Traceback (most recent call last):" in r.stdout
-
-
-def test_cli_without_style_unchanged_json(script_path):
-    r = _run(script_path, "-n", "2", "--lines-per-second", "1000", "--no-trace-id")
-    assert r.returncode == 0
-    for line in r.stdout.splitlines():
-        if line.strip():
-            json.loads(line)
-
-
-def test_cli_help_shows_style(script_path):
-    r = _run(script_path, "--help")
-    assert "--style" in r.stdout
-    assert "--error-every" in r.stdout
-    assert "--error-interval" in r.stdout
-    assert "plain" in r.stdout
-
-@pytest.mark.parametrize("name,needle", [
-    ("java", "NullPointerException"),
-    ("python", "Traceback"),
-    ("go", "panic"),
-    ("rust", "panicked at"),
-    ("csharp", "NullReferenceException"),
-    ("ruby", "NoMethodError"),
-    ("javascript", "TypeError"),
-    ("node", "TypeError"),   # alias
-    ("c#", "NullReferenceException"),  # alias
-])
-def test_load_all_builtin_styles(ft, name, needle):
-    style = ft.load_style(name)
-    assert style["errors"]
-    assert any(needle in e["body"] for e in style["errors"])
-
-def test_render_style_timestamp_java(ft):
-    from datetime import datetime, timezone
-    style = ft.load_style("java")
-    now = datetime(2026, 10, 2, 15, 30, 45, 123456, tzinfo=timezone.utc)
-    out = ft.render_style_text(
-        "{timestamp} INFO example", now, style
+def test_cli_error_interval_with_time_step_json(script_path):
+    # With --time-step 5s and --error-interval 5s, first line initializes timer
+    # (non-ERROR) and every subsequent 5s step emits ERROR.
+    r = _run(
+        script_path,
+        "--error-interval",
+        "5s",
+        "--time-step",
+        "5s",
+        "-n",
+        "5",
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
     )
-    assert out.startswith("2026-10-02 15:30:45,123 ")
-    assert "2026-10-02 12:00:00" not in out
-
-
-def test_cli_style_uses_live_timestamp(script_path):
-    r = _run(script_path, "--style", "java", "--failure-rate", "0.0",
-             "-n", "1", "--lines-per-second", "1000")
     assert r.returncode == 0
-    # Leading log4j-style stamp must be present (live clock, not a bare leftover brace).
-    assert "{timestamp}" not in r.stdout
-    assert re.search(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} ", r.stdout)
-    assert "INFO" in r.stdout or "WARN" in r.stdout or "DEBUG" in r.stdout
-
-def test_render_style_text_tolerates_braces(ft):
-    """Rust/JS fixtures contain `{...}` that must not crash format substitution."""
-    from datetime import datetime, timezone
-    style = ft.load_style("rust")
-    now = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
-    body = next(e["body"] for e in style["errors"] if e["name"] == "mutex-poisoned")
-    out = ft.render_style_text(body, now, style)
-    assert "PoisonError { .. }" in out
+    levels = [json.loads(l)["level"] for l in r.stdout.splitlines() if l.strip()]
+    assert len(levels) == 5
+    assert levels[0] != "ERROR"
+    assert all(lvl == "ERROR" for lvl in levels[1:])
 
 
-def test_cli_style_rust_and_javascript_no_crash(script_path):
-    for name in ("rust", "javascript"):
-        r = _run(script_path, "--style", name, "--failure-rate", "1.0",
-                 "-n", "25", "--lines-per-second", "5000")
-        assert r.returncode == 0, r.stderr
-        assert r.stdout.strip()
+def test_cli_error_interval_every_30s_with_10s_step(script_path):
+    # 10s steps with 30s interval: ticks at t=0, 10, 20, 30(ERR), 40, 50, 60(ERR)
+    r = _run(
+        script_path,
+        "--error-interval",
+        "30s",
+        "--time-step",
+        "10s",
+        "-n",
+        "7",
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
+    )
+    assert r.returncode == 0
+    levels = [json.loads(l)["level"] for l in r.stdout.splitlines() if l.strip()]
+    assert len(levels) == 7
+    error_indices = [i for i, lvl in enumerate(levels) if lvl == "ERROR"]
+    assert error_indices == [3, 6]
 
 
-def test_cli_style_rejects_http_format(script_path):
-    r = _run(script_path, "--style", "java", "-f", "http", "-n", "1")
+def test_cli_error_interval_http_format(script_path):
+    r = _run(
+        script_path,
+        "-f",
+        "http",
+        "--error-interval",
+        "1m",
+        "--time-step",
+        "30s",
+        "-n",
+        "5",
+        "--lines-per-second",
+        "1000",
+        "--no-trace-id",
+    )
+    assert r.returncode == 0
+    lines = [l for l in r.stdout.splitlines() if l.strip()]
+    assert len(lines) == 5
+    # t=0s(200), t=30s(200), t=60s(500), t=90s(200), t=120s(500)
+    assert "status=200" in lines[0] and "level=error" not in lines[0]
+    assert "status=200" in lines[1] and "level=error" not in lines[1]
+    assert "status=500" in lines[2] and "level=error" in lines[2]
+    assert "status=200" in lines[3] and "level=error" not in lines[3]
+    assert "status=500" in lines[4] and "level=error" in lines[4]
+
+
+def test_cli_error_interval_invalid_duration_exits(script_path):
+    r = _run(script_path, "--error-interval", "invalid", "-n", "1")
     assert r.returncode != 0
-    assert "incompatible" in (r.stderr + r.stdout).lower()
+    assert "--error-interval" in (r.stdout + r.stderr)
 
 
-def test_resolve_style_clock_honors_timezone(ft):
-    from datetime import datetime, timezone
-    base = datetime(2026, 10, 2, 12, 0, 0, tzinfo=timezone.utc)
-    utc = ft.resolve_style_clock(base, "UTC")
-    local = ft.resolve_style_clock(base, "local")
-    assert utc.utcoffset().total_seconds() == 0
-    assert local.tzinfo is not None
+def test_cli_help_shows_error_interval(script_path):
+    r = _run(script_path, "--help")
+    assert r.returncode == 0
+    assert "--error-interval" in r.stdout
 
 
-def test_parse_duration_error_mentions_flag(ft, capsys):
+# ---------------------------------------------------------------------------
+# CLI UX improvements (-r, canonical format slugs, lowercase byte sizes, -d/--duration, --seed, -e/-z)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "fmt",
+    [
+        "apache-common",
+        "apache_common",
+        "apache-combined",
+        "apache_combined",
+        "apache-error",
+        "apache_error",
+        "bsd-syslog",
+        "bsd_syslog",
+        "rfc3164",
+        "syslog",
+        "rfc5424",
+    ],
+)
+def test_normalize_log_format_slugs(ft, sample_entry, fmt):
+    line = ft.format_log(sample_entry, fmt)
+    assert line and not line.startswith("{")
+
+
+@pytest.mark.parametrize("bad_fmt", ["apache common", "JSON", "invalid"])
+def test_cli_rejects_non_canonical_formats(script_path, bad_fmt):
+    r = _run(script_path, "-f", bad_fmt, "-n", "1")
+    assert r.returncode != 0
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("500", 500),
+        (500, 500),
+        ("100b", 100),
+        ("1kb", 1024),
+        ("1.5mb", int(1.5 * 1024 * 1024)),
+        ("1gb", 1024**3),
+    ],
+)
+def test_parse_size_valid(ft, raw, expected):
+    assert ft.parse_size(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["-5", "10XB", "1KB", "2k", "1GiB", "abc", ""])
+def test_parse_size_invalid_exits(ft, raw):
     with pytest.raises(SystemExit):
-        ft.parse_duration("nope", "--error-interval")
-    out = capsys.readouterr().out
-    assert "--error-interval" in out
+        ft.parse_size(raw)
 
 
-def test_format_logfmt_escapes_newlines(ft):
-    line = ft.format_logfmt_log({"message": "line1\nline2\"x"})
-    assert "\n" not in line
-    assert "line1\\nline2" in line
-    assert '\\"' in line or '\"' in line
+def test_cli_rate_short_and_long(script_path):
+    r1 = _run(script_path, "-r", "1000", "-n", "3", "--no-trace-id")
+    r2 = _run(script_path, "--lines-per-second", "1000", "-n", "3", "--no-trace-id")
+    assert r1.returncode == 0 and r2.returncode == 0
+    assert len(r1.stdout.splitlines()) == 3
+    assert len(r2.stdout.splitlines()) == 3
 
+
+def test_cli_max_bytes_human_size(script_path, tmp_path):
+    out = tmp_path / "human.log"
+    r = _run(script_path, "-b", "1kb", "-r", "1000", "--file", str(out))
+    assert r.returncode == 0
+    assert out.stat().st_size >= 1024
+
+
+def test_cli_duration_with_time_step(script_path):
+    # --duration 30s with --time-step 10s emits at t=0s, 10s, 20s (3 lines) then stops at t=30s
+    r = _run(
+        script_path, "--duration", "30s", "-s", "10s", "-r", "1000", "--no-trace-id"
+    )
+    assert r.returncode == 0
+    lines = [l for l in r.stdout.splitlines() if l.strip()]
+    assert len(lines) == 3
+
+
+def test_cli_flog_drop_in_flags(script_path, tmp_path):
+    # Full flog-style command: --format apache_common -t gz -o <path> --number 4 --sleep 1s -d 1ms -w
+    out = tmp_path / "flog_out.log"
+    r = _run(
+        script_path,
+        "--format",
+        "apache_common",
+        "-t",
+        "gz",
+        "-o",
+        str(out),
+        "--number",
+        "4",
+        "--sleep",
+        "1s",
+        "-d",
+        "1ms",
+        "-w",
+    )
+    assert r.returncode == 0
+    with gzip.open(str(out), "rt") as fh:
+        lines = [l for l in fh.read().splitlines() if l.strip()]
+    assert len(lines) == 4
+    assert "HTTP/1.1" in lines[0]
+
+
+def test_cli_flog_loop_flag_accepted(script_path):
+    r = _run(script_path, "-f", "rfc3164", "-l", "-n", "3", "-d", "1ms")
+    assert r.returncode == 0
+    lines = [l for l in r.stdout.splitlines() if l.strip()]
+    assert len(lines) == 3
+    assert re.match(r"^<\d{1,3}>", lines[0])
+
+
+def test_cli_seed_reproducible(script_path):
+    args = ("--seed", "42", "-n", "5", "-r", "1000", "--no-timestamp", "--no-trace-id")
+    r1 = _run(script_path, *args)
+    r2 = _run(script_path, *args)
+    assert r1.returncode == 0 and r2.returncode == 0
+    assert r1.stdout == r2.stdout
+
+
+def test_cli_short_e_z_and_c_compress(script_path, tmp_path):
+    out = tmp_path / "gz_short.log"
+    r = _run(
+        script_path,
+        "-e",
+        "10s",
+        "-s",
+        "10s",
+        "-z",
+        "utc",
+        "-c",
+        "-n",
+        "3",
+        "-r",
+        "1000",
+        "--file",
+        str(out),
+    )
+    assert r.returncode == 0
+    with gzip.open(str(out), "rt") as fh:
+        objs = [json.loads(l) for l in fh.read().splitlines() if l.strip()]
+    assert len(objs) == 3
+    assert objs[0]["timestamp"].endswith("Z")
+    assert objs[0]["level"] != "ERROR"
+    assert objs[1]["level"] == "ERROR"
+    assert objs[2]["level"] == "ERROR"
+
+
+# ---------------------------------------------------------------------------
+# Task 9: Language-specific & multi-line stack trace logs (--stack / --multiline)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "stack,alias",
+    [
+        ("java", "java"),
+        ("python", "py"),
+        ("go", "golang"),
+        ("nodejs", "js"),
+        ("dotnet", "csharp"),
+        ("ruby", "rb"),
+        ("rust", "rs"),
+        ("php", "php"),
+    ],
+)
+def test_stack_info_and_error_multiline(ft, stack, alias):
+    assert ft.normalize_stack(alias) == stack
+    dt = datetime(2026, 10, 16, 14, 42, 1, 123000, tzinfo=timezone.utc)
+
+    # Non-error: single-line realistic log with timestamp
+    info_line, info_msg, info_trace = ft.generate_stack_event(
+        alias, "INFO", dt, include_timestamp=True, tz="utc"
+    )
+    assert "\n" not in info_line
+    assert "2026" in info_line
+    assert info_msg in info_line
+    assert info_trace is None
+
+    # Error: multi-line stack trace with timestamp on header line
+    err_line, err_msg, err_trace = ft.generate_stack_event(
+        alias, "ERROR", dt, include_timestamp=True, tz="utc"
+    )
+    assert "\n" in err_line
+    assert "2026" in err_line.splitlines()[0]
+    assert err_trace is not None
+    assert len(err_line.splitlines()) >= 4
+
+
+def test_stack_cli_with_failure_rate_and_json(script_path):
+    # Native multi-line stack output
+    r = _run(
+        script_path, "--stack", "java", "--failure-rate", "1.0", "-n", "2", "-r", "1000"
+    )
+    assert r.returncode == 0
+    assert "ERROR" in r.stdout
+    assert "\tat " in r.stdout
+
+    # Combined with explicit -f json
+    r_json = _run(
+        script_path,
+        "--multiline",
+        "python",
+        "-f",
+        "json",
+        "--failure-rate",
+        "1.0",
+        "-n",
+        "2",
+        "-r",
+        "1000",
+    )
+    assert r_json.returncode == 0
+    lines = [json.loads(line) for line in r_json.stdout.strip().splitlines()]
+    assert len(lines) == 2
+    assert lines[0]["stack"] == "python"
+    assert "Traceback (most recent call last):" in lines[0]["stacktrace"]
