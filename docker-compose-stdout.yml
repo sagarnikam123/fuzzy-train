@@ -15,9 +15,9 @@ services:
       - --max-log-length
       - "180"
       - --log-format
-      - JSON
+      - json
       - --time-zone
-      - UTC
+      - utc
       - --output
       - stdout
       - --trace-id-type
@@ -37,7 +37,7 @@ services:
       - --log-format
       - logfmt
       - --time-zone
-      - UTC
+      - utc
       - --output
       - stdout
       - --trace-id-type
@@ -55,9 +55,9 @@ services:
       - --max-log-length
       - "300"
       - --log-format
-      - apache combined
+      - apache-combined
       - --time-zone
-      - UTC
+      - utc
       - --output
       - stdout
     container_name: user-logs-stdout

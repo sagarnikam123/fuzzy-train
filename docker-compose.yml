@@ -16,9 +16,9 @@ services:
       - --max-log-length
       - "180"
       - --log-format
-      - JSON
+      - json
       - --time-zone
-      - UTC
+      - utc
       - --output
       - file
       - --file
@@ -42,7 +42,7 @@ services:
       - --log-format
       - logfmt
       - --time-zone
-      - UTC
+      - utc
       - --output
       - file
       - --file
@@ -64,9 +64,9 @@ services:
       - --max-log-length
       - "300"
       - --log-format
-      - apache combined
+      - apache-combined
       - --time-zone
-      - UTC
+      - utc
       - --output
       - file
       - --file
